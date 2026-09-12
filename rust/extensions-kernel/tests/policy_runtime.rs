@@ -4,8 +4,8 @@
 //! Serialized on the process-global kernel (same constraint as policy_admission).
 
 use extensions_kernel::capi::{
-    emk_handle_release, emk_handle_resolve, emk_invoke_ptr, emk_last_error, emk_request,
-    emk_string_free,
+    emk_handle_release, emk_handle_resolve, emk_invoke_ptr, emk_last_error, emk_request, emk_reset,
+    emk_string_free, install_global_response_sink,
 };
 use serde_json::{json, Value};
 use std::ffi::{CStr, CString};
@@ -239,6 +239,62 @@ fn monotonic_memory_growth_triggers_leak_suspected() {
         .filter(|entry| entry["kind"] == "leak.suspected")
         .count();
     assert_eq!(count, 1, "leak.suspected must be latched");
+
+    emk_handle_release(handle);
+}
+
+#[test]
+fn audit_events_deliver_through_the_sink() {
+    let _guard = kernel_lock();
+    emk_reset();
+    let sink_rx = install_global_response_sink();
+
+    // Tiny per-call fuel: every spin invoke traps → one fuel.trap audit entry,
+    // which must stream to the sink AS IT IS RECORDED (governance alerting).
+    policy_set_stub(json!({
+        "frame": { "tickHz": 500.0, "pluginSharePct": 0.05 },
+        "fuel": { "perCallOverride": 1_000_000 }
+    }));
+
+    const SPIN_WAT: &str = r#"
+(module
+  (memory (export "memory") 1)
+  (func (export "ext_call") (param i32) (param i32) (result i64)
+    (loop $l (br $l))
+    (i64.const 0)))
+"#;
+    let entry = write_guest("audit-sink-spin.wat", SPIN_WAT);
+    load_guest("demo.rt.audit-sink", &entry, 1);
+    activate("demo.rt.audit-sink");
+    let handle = resolve("demo.rt.audit-sink");
+
+    assert_eq!(invoke(handle), -1, "spin must trap at its fuel budget");
+
+    // The audit event arrives through the sink as an envelope line with the
+    // full entry — no polling required.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let envelope = loop {
+        match sink_rx.try_recv() {
+            Ok(line) if line.contains("\"kind\":\"audit\"") && line.contains("fuel.trap") => break line,
+            Ok(_) => continue,
+            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "audit event never arrived through the sink"
+                );
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                panic!("sink disconnected before the audit event was delivered")
+            }
+        }
+    };
+    let parsed: Value = serde_json::from_str(&envelope).expect("audit envelope is valid JSON");
+    let audit_entry = &parsed["entry"];
+    assert_eq!(audit_entry["kind"], "fuel.trap");
+    assert_eq!(audit_entry["extensionId"], "demo.rt.audit-sink");
+    assert!(audit_entry["seq"].as_u64().unwrap_or(0) > 0);
+    assert!(audit_entry["timestampMs"].as_u64().unwrap_or(0) > 0);
 
     emk_handle_release(handle);
 }

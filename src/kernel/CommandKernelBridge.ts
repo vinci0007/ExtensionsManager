@@ -12,6 +12,10 @@ import { resolveSessionContract } from '../core/sessionContracts.js'
 import { createCompatibilitySession, isUnsupportedSessionError } from '../runtimes/sessionRuntimeUtils.js'
 import type { KernelBridge, KernelBridgeLoadResult } from './KernelBridge.js'
 import type {
+  KernelAuditEntry,
+  KernelAuditEventEnvelope,
+  KernelAuditQuery,
+  KernelAuditResult,
   KernelEnvelope,
   KernelEventEnvelope,
   KernelLoadResult,
@@ -142,8 +146,20 @@ export class CommandKernelBridge implements KernelBridge {
     })
   }
 
-  async openSession(extensionId: string, capability: string, input: unknown): Promise<ExtensionSession> {
-    try {
+  /** Kernel-backed audit ring + per-plugin accounting (UI dashboards). */
+  async getAudit(query: KernelAuditQuery = {}): Promise<KernelAuditResult> {
+    return this.transport.request<KernelAuditResult>('kernel.audit.query', {
+      sinceSeq: query.sinceSeq,
+      limit: query.limit,
+    })
+  }
+
+  /** Await the next governance (audit) event pushed by the kernel. */
+  async nextAuditEvent(): Promise<KernelAuditEntry> {
+    return this.transport.nextAuditEvent()
+  }
+
+  async openSession(extensionId: string, capability: string, input: unknown): Promise<ExtensionSession> {    try {
       const result = await this.transport.request<KernelSessionOpenResult>('kernel.openSession', {
         extensionId,
         capability,
@@ -202,6 +218,7 @@ function createSerializableContext(context: ExtensionContext): Record<string, un
     workspacePath: context.workspacePath,
     storagePath: context.storagePath,
     initialization: context.initialization,
+    settings: context.settings,
   }
 }
 
@@ -261,6 +278,8 @@ class CommandKernelTransport {
   }>()
   private readonly sessionQueues = new Map<string, ExtensionSessionEvent[]>()
   private readonly sessionWaiters = new Map<string, { resolve(event: ExtensionSessionEvent): void; reject(reason?: unknown): void }[]>()
+  private readonly auditQueue: KernelAuditEntry[] = []
+  private readonly auditWaiters: { resolve(entry: KernelAuditEntry): void; reject(reason?: unknown): void }[] = []
   private child?: ChildProcess
   private reader?: readline.Interface
   private policySent = false
@@ -323,6 +342,38 @@ class CommandKernelTransport {
       waiters.push({ resolve, reject })
       this.sessionWaiters.set(sessionId, waiters)
     })
+  }
+
+  /** Await the next governance (audit) event; queued events drain first. */
+  async nextAuditEvent(): Promise<KernelAuditEntry> {
+    const queued = this.auditQueue.shift()
+    if (queued) {
+      return queued
+    }
+
+    return new Promise<KernelAuditEntry>((resolve, reject) => {
+      this.auditWaiters.push({ resolve, reject })
+    })
+  }
+
+  private handleAuditEvent(envelope: KernelAuditEventEnvelope): void {
+    const waiter = this.auditWaiters.shift()
+    if (waiter) {
+      waiter.resolve(envelope.entry)
+      return
+    }
+    // Bounded backlog: governance events must never become a memory vector.
+    this.auditQueue.push(envelope.entry)
+    while (this.auditQueue.length > 256) {
+      this.auditQueue.shift()
+    }
+  }
+
+  private rejectAuditWaiters(error: Error): void {
+    for (const waiter of this.auditWaiters) {
+      waiter.reject(error)
+    }
+    this.auditWaiters.length = 0
   }
 
   clearSessionState(sessionId: string): void {
@@ -440,6 +491,11 @@ class CommandKernelTransport {
       return
     }
 
+    if (envelope.kind === 'audit') {
+      this.handleAuditEvent(envelope)
+      return
+    }
+
     if (envelope.kind === 'event') {
       this.handleEvent(envelope)
     }
@@ -542,6 +598,7 @@ class CommandKernelTransport {
     }
     this.sessionWaiters.clear()
     this.sessionQueues.clear()
+    this.rejectAuditWaiters(error)
   }
 
   async dispose(): Promise<void> {
@@ -583,6 +640,11 @@ function isKernelEnvelope(value: unknown): value is KernelEnvelope {  if (!value
     return typeof eventEnvelope.sessionId === 'string'
       && Boolean(eventEnvelope.event)
       && typeof eventEnvelope.event === 'object'
+  }
+
+  if (kind === 'audit') {
+    const auditEnvelope = value as { entry?: unknown }
+    return Boolean(auditEnvelope.entry) && typeof auditEnvelope.entry === 'object'
   }
 
   return false

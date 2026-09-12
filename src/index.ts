@@ -24,6 +24,12 @@ export type { RemoteRuntimeOptions } from './runtimes/remote/RemoteRuntime.js'
 export type { ExtensionArtifact, ExtensionArtifactKind, ExtensionAuthKind, ExtensionAuthSpec, ExtensionBuildSpec, ExtensionLaunchSpec, PlatformEntry, PlatformKey } from './contracts/ExtensionArtifact.js'
 export type { KernelPolicyConfig, KernelFramePolicy, KernelMemoryPolicy, KernelMemoryTiers, KernelFuelPolicy, PolicyConsentRequest } from './contracts/KernelPolicy.js'
 export type {
+  ExtensionSettingDefinition,
+  ExtensionSettingType,
+  ExtensionSettingValue,
+} from './contracts/ExtensionSettings.js'
+export { assertSettingValueMatches } from './contracts/ExtensionSettings.js'
+export type {
   ExtensionCapability,
   ExtensionConcurrencyPolicy,
   ExtensionExecutionMode,
@@ -97,6 +103,11 @@ export { normalizeExtensionManifestForKernel } from './kernel/normalizeManifest.
 export type {
   CanonicalKernelCapability,
   KernelEnvelope,
+  KernelAuditAccounting,
+  KernelAuditEntry,
+  KernelAuditEventEnvelope,
+  KernelAuditQuery,
+  KernelAuditResult,
   KernelEventEnvelope,
   KernelLoadRequest,
   KernelLoadResult,

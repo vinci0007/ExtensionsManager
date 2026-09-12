@@ -60,6 +60,7 @@ export type KernelRequestMethod =
   | 'kernel.session.send'
   | 'kernel.session.close'
   | 'kernel.cancel'
+  | 'kernel.audit.query'
 
 export interface KernelRequestEnvelope {
   kind: 'request'
@@ -84,4 +85,53 @@ export interface KernelEventEnvelope {
   event: ExtensionSessionEvent
 }
 
-export type KernelEnvelope = KernelRequestEnvelope | KernelResponseEnvelope | KernelEventEnvelope
+export type KernelEnvelope =
+  | KernelRequestEnvelope
+  | KernelResponseEnvelope
+  | KernelEventEnvelope
+  | KernelAuditEventEnvelope
+
+/** Cursor query over the kernel's bounded audit ring (see kernel.audit.query). */
+export interface KernelAuditQuery {
+  /** Only entries with seq greater than this cursor (0 = from the start). */
+  sinceSeq?: number
+  /** Maximum entries to return (kernel clamps to the ring capacity). */
+  limit?: number
+}
+
+export interface KernelAuditEntry {
+  seq: number
+  timestampMs: number
+  kind: string
+  extensionId: string
+  detail: string
+}
+
+export interface KernelAuditAccounting {
+  extensionId: string
+  callCount: number
+  totalNs: number
+  peakNs: number
+  fuelTraps: number
+  memorySoftBreaches: number
+  memoryGrowthDenials: number
+  memoryHighWaterBytes: number
+  fuelConsumedTotal: number
+  contractViolations: number
+}
+
+export interface KernelAuditResult {
+  entries: KernelAuditEntry[]
+  /** GLOBAL newest sequence (even beyond the returned batch) — the next cursor. */
+  lastSeq: number
+  accounting: KernelAuditAccounting[]
+}
+
+/**
+ * Governance event pushed by the kernel through the response sink the moment
+ * an audit entry is recorded (scheduler deliveries share the same channel).
+ */
+export interface KernelAuditEventEnvelope {
+  kind: 'audit'
+  entry: KernelAuditEntry
+}

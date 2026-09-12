@@ -208,6 +208,8 @@ fn async_scheduler_pool_reuse_and_backpressure() {
     let deadline = Instant::now() + Duration::from_secs(5);
     while delivered.len() < 1 && Instant::now() < deadline {
         match sink_rx.try_recv() {
+            // Governance (audit) envelopes share the sink; responses only.
+            Ok(envelope) if envelope.contains("\"kind\":\"audit\"") => continue,
             Ok(envelope) => delivered.push(envelope),
             Err(std::sync::mpsc::TryRecvError::Empty) => std::thread::sleep(Duration::from_millis(5)),
             Err(std::sync::mpsc::TryRecvError::Disconnected) => break,
@@ -223,6 +225,7 @@ fn async_scheduler_pool_reuse_and_backpressure() {
     let deadline = Instant::now() + Duration::from_secs(5);
     while delivered.len() < 2 && Instant::now() < deadline {
         match sink_rx.try_recv() {
+            Ok(envelope) if envelope.contains("\"kind\":\"audit\"") => continue,
             Ok(envelope) => delivered.push(envelope),
             Err(std::sync::mpsc::TryRecvError::Empty) => std::thread::sleep(Duration::from_millis(5)),
             Err(std::sync::mpsc::TryRecvError::Disconnected) => break,
@@ -314,6 +317,8 @@ fn async_scheduler_isolates_slow_plugin_from_wasm_neighbor() {
     let mut delivered = Vec::new();
     while delivered.len() < 4 && Instant::now() < deadline {
         match sink_rx.try_recv() {
+            // Governance (audit) envelopes share the sink; responses only.
+            Ok(envelope) if envelope.contains("\"kind\":\"audit\"") => continue,
             Ok(envelope) => delivered.push(envelope),
             Err(std::sync::mpsc::TryRecvError::Empty) => std::thread::sleep(Duration::from_millis(5)),
             Err(std::sync::mpsc::TryRecvError::Disconnected) => break,

@@ -321,6 +321,23 @@ kernel.installResponseSink()         // 异步调度器投递 → drainAsyncResp
 [`realtime-tests/harness.mjs`](../realtime-tests/harness.mjs)；报告在
 [`realtime-tests/REPORT.md`](../realtime-tests/REPORT.md)。
 
+### B5. 面向 UI 的接口面（仪表盘、插件市场、设置、许可弹窗）
+
+UI 需要的一切都是程序化调用——管理器按无头设计，UI 只是宿主里的又一个调用方。
+
+| UI 功能 | 接口 |
+|---|---|
+| 插件列表 / 状态 | `manager.list()` · `getInitializationInfo(id).isActive` · `checkStatus(id)` |
+| 启用 / 停用 | `manager.activate(id)` / `deactivate(id)` |
+| **性能与健康面板** | `await manager.getAudit({ sinceSeq, limit })` → `{ entries, lastSeq, accounting }` —— 每插件调用数、延迟、fuel 陷阱、内存高水位、契约违约；`lastSeq` 即下一次轮询游标 |
+| **治理事件实时告警**（免轮询） | `await manager.nextAuditEvent()` —— 内核记录审计条目的瞬间即送达（准入拒绝、fuel 陷阱、内存压力/拒绝、`leak.suspected`、`contract.violation`、`invoke.busy`）；事件同样经守护进程 stdout 与 napi `drainAsyncResponses()` 通道流出，形如 `{"kind":"audit","entry":{…}}` |
+| **插件市场** | `await store.installFromRegistry(registryUrl, extensionId)` —— 拉取注册表索引，校验 bundle sha256（对整包字节取 `sha256-<hex>`，逐文件摘要同样校验），拒绝路径穿越与非环回明文 http，然后安装 |
+| **插件设置页** | 清单 `settings: [{ key, type: 'string'\|'number'\|'boolean'\|'enum', title?, default?, enum?, min?, max? }]` → `manager.getSettingDefinitions(id)`（UI 通用渲染）、`manager.getSettingValues(id)`、`manager.setSetting(id, key, value)`（带校验）。值在每次（重）激活时以 `context.settings` 下发——调 `reinitialize(id)` 即时生效 |
+| **许可弹窗** | 清单 `capabilities[].permission: 'prompt'` + 管理器选项 `onCapabilityPermission: async ({ extensionId, capability }) => boolean`。该能力首次使用时每个激活周期提示一次（缓存决策）；无处理器 = fail-closed |
+
+轨道 A 宿主同样拥有对应能力：`emk_request("kernel.audit.query", …)` 轮询；
+安装了响应 sink 的嵌入侧会收到 `{"kind":"audit"}` 行事件。
+
 ---
 
 ## 下一步

@@ -2,6 +2,7 @@ import type { ExtensionArtifact } from './ExtensionArtifact.js'
 import type { ExtensionCapability } from './ExtensionCapability.js'
 import type { ExtensionPermissionSet } from './ExtensionPermissions.js'
 import type { ExtensionRuntime } from './ExtensionRuntime.js'
+import type { ExtensionSettingDefinition } from './ExtensionSettings.js'
 import type { ExtensionSignature } from './ExtensionSignature.js'
 
 export type ExtensionTrustDomain = 'official' | 'third-party' | 'private'
@@ -70,6 +71,12 @@ export interface ExtensionManifest {
   runtime: ExtensionRuntime
   activationEvents?: string[]
   capabilities: ExtensionCapability[]
+  /**
+   * Declarative user settings: the host UI renders them generically, the
+   * manager validates and stores values, and the plugin receives the current
+   * values as `context.settings` on every (re)activation.
+   */
+  settings?: ExtensionSettingDefinition[]
   permissions?: ExtensionPermissionSet
   signature?: ExtensionSignature
 }

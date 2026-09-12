@@ -949,9 +949,125 @@ test('command kernel bridge rejects an async invoke whose real result never arri
   }
 })
 
-function createAsyncKernelDaemonStubScript(mode: 'accepted-then-result' | 'accepted-then-error' | 'accepted-then-silence' | 'busy'): string {
+test('command kernel bridge exposes the kernel audit query to the UI surface', async (t) => {
+  await ensureSpawnAvailable(t)
+  const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'extensions-manager-kernel-async-'))
+  const pluginDirectory = path.join(tempDirectory, 'plugins', 'plugin-a')
+  const kernelDaemonPath = path.join(tempDirectory, 'kernel-daemon.mjs')
+  const hostConfigPath = path.join(tempDirectory, 'host.config.json')
+
+  try {
+    await fs.mkdir(pluginDirectory, { recursive: true })
+    await fs.writeFile(path.join(pluginDirectory, 'extension.json'), JSON.stringify({
+      id: 'demo.kernel-async-plugin',
+      version: '1.0.0',
+      protocolVersion: '1',
+      artifact: { kind: 'module', entry: './index.js' },
+      runtime: 'node',
+      capabilities: [{ name: 'demo.work' }],
+    }, null, 2), 'utf8')
+    await fs.writeFile(path.join(pluginDirectory, 'index.js'), "export default { capabilities: { 'demo.work': async () => ({}) } }\n", 'utf8')
+    await fs.writeFile(kernelDaemonPath, createAsyncKernelDaemonStubScript('audit'), 'utf8')
+    await fs.writeFile(hostConfigPath, JSON.stringify({
+      pluginsDirectory: './plugins', isDevelopment: true,
+      pluginsRecursive: true,
+      kernel: {
+        mode: 'daemon',
+        transport: 'pipe',
+        command: process.execPath,
+        args: ['./kernel-daemon.mjs'],
+        cwd: '.',
+        timeoutMs: 5000,
+      },
+    }, null, 2), 'utf8')
+
+    const configured = await createExtensionManagerFromHostConfig(hostConfigPath)
+    try {
+      const audit = await configured.manager.getAudit({ sinceSeq: 0, limit: 256 })
+      assert.equal(audit.lastSeq, 2)
+      assert.equal(audit.entries[0].kind, 'policy.admission_rejected')
+      assert.equal(audit.entries[0].extensionId, 'demo.kernel-async-plugin')
+      assert.equal(audit.accounting[0].callCount, 3)
+      assert.equal(audit.accounting[0].memoryHighWaterBytes, 4096)
+    } finally {
+      await configured.manager.dispose()
+    }
+  } finally {
+    await removeDirectoryWithRetry(tempDirectory)
+  }
+})
+
+test('kernel governance events stream to the facade without polling', async (t) => {
+  await ensureSpawnAvailable(t)
+  const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'extensions-manager-kernel-async-'))
+  const pluginDirectory = path.join(tempDirectory, 'plugins', 'plugin-a')
+  const kernelDaemonPath = path.join(tempDirectory, 'kernel-daemon.mjs')
+  const hostConfigPath = path.join(tempDirectory, 'host.config.json')
+
+  try {
+    await fs.mkdir(pluginDirectory, { recursive: true })
+    await fs.writeFile(path.join(pluginDirectory, 'extension.json'), JSON.stringify({
+      id: 'demo.kernel-async-plugin',
+      version: '1.0.0',
+      protocolVersion: '1',
+      artifact: { kind: 'module', entry: './index.js' },
+      runtime: 'node',
+      capabilities: [{ name: 'demo.work' }],
+    }, null, 2), 'utf8')
+    await fs.writeFile(path.join(pluginDirectory, 'index.js'), "export default { capabilities: { 'demo.work': async () => ({}) } }\n", 'utf8')
+    await fs.writeFile(kernelDaemonPath, createAsyncKernelDaemonStubScript('audit'), 'utf8')
+    await fs.writeFile(hostConfigPath, JSON.stringify({
+      pluginsDirectory: './plugins', isDevelopment: true,
+      pluginsRecursive: true,
+      kernel: {
+        mode: 'daemon',
+        transport: 'pipe',
+        command: process.execPath,
+        args: ['./kernel-daemon.mjs'],
+        cwd: '.',
+        timeoutMs: 5000,
+      },
+    }, null, 2), 'utf8')
+
+    const configured = await createExtensionManagerFromHostConfig(hostConfigPath)
+    try {
+      // The audit event is pushed BEFORE the real result: a UI awaiting
+      // nextAuditEvent gets it the moment it is recorded, while the invoke
+      // promise stays pending for the actual envelope.
+      const firstInvoke = configured.manager.invoke('demo.kernel-async-plugin', 'demo.work', {})
+      const pushed = await configured.manager.nextAuditEvent()
+      assert.equal(pushed.kind, 'contract.violation')
+      assert.equal(pushed.extensionId, 'demo.kernel-async-plugin')
+      assert.deepEqual(await firstInvoke, { message: 'hello from async plugin' })
+
+      // Second invoke: its event arrives while nobody waits — the queued
+      // event must drain on the next nextAuditEvent call.
+      await configured.manager.invoke('demo.kernel-async-plugin', 'demo.work', {})
+      const queued = await configured.manager.nextAuditEvent()
+      assert.equal(queued.kind, 'contract.violation')
+      assert.ok(queued.seq > pushed.seq, 'queued event is the newer one')
+    } finally {
+      await configured.manager.dispose()
+    }
+  } finally {
+    await removeDirectoryWithRetry(tempDirectory)
+  }
+})
+
+test('audit surface rejects with a clear error in local mode', async () => {
+  const manager = new ExtensionManager({ isDevelopment: true })
+  manager.registerRuntime(new NodeRuntime())
+
+  await assert.rejects(() => manager.getAudit(), /local bridge keeps no kernel audit ring/)
+  await assert.rejects(() => manager.nextAuditEvent(), /local bridge keeps no kernel audit ring/)
+
+  await manager.dispose()
+})
+
+function createAsyncKernelDaemonStubScript(mode: 'accepted-then-result' | 'accepted-then-error' | 'accepted-then-silence' | 'busy' | 'audit'): string {
   return `
 const MODE = ${JSON.stringify(mode)}
+let auditSeq = 1
 
 function writeEnvelope(envelope) {
   process.stdout.write(JSON.stringify(envelope) + '\\n')
@@ -1000,9 +1116,29 @@ function handleRequest(request) {
     return
   }
 
+  if (request.method === 'kernel.audit.query') {
+    writeSuccess(request.id, {
+      entries: [
+        { seq: 1, timestampMs: 1700000000000, kind: 'policy.admission_rejected', extensionId: 'demo.kernel-async-plugin', detail: 'memory tier overflow' },
+      ],
+      lastSeq: 2,
+      accounting: [
+        { extensionId: 'demo.kernel-async-plugin', callCount: 3, totalNs: 120000, peakNs: 60000, fuelTraps: 0, memorySoftBreaches: 1, memoryGrowthDenials: 0, memoryHighWaterBytes: 4096, fuelConsumedTotal: 512, contractViolations: 0 },
+      ],
+    })
+    return
+  }
+
   if (request.method === 'kernel.invoke') {
     if (MODE === 'busy') {
       writeError(request.id, 'KERNEL_BUSY', 'async invoke queue full: 1 in flight')
+      return
+    }
+    if (MODE === 'audit') {
+      auditSeq += 1
+      writeEnvelope({ kind: 'audit', entry: { seq: auditSeq, timestampMs: 1700000000000 + auditSeq, kind: 'contract.violation', extensionId: 'demo.kernel-async-plugin', detail: 'over-slice streak' } })
+      writeSuccess(request.id, { accepted: true, async: true })
+      setTimeout(() => writeSuccess(request.id, { message: 'hello from async plugin' }), 30)
       return
     }
     writeSuccess(request.id, { accepted: true, async: true })

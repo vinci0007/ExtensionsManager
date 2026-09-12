@@ -11,11 +11,21 @@ import type { ExtensionSession } from '../contracts/ExtensionSession.js'
 import type { RevocationList, TrustBundle } from '../contracts/TrustBundle.js'
 import { ExtensionLoadError } from '../errors/ExtensionError.js'
 import { type KernelBridge } from '../kernel/KernelBridge.js'
+import type {
+  KernelAuditEntry,
+  KernelAuditQuery,
+  KernelAuditResult,
+} from '../kernel/KernelProtocol.js'
 import { LocalKernelBridge } from '../kernel/LocalKernelBridge.js'
 import type { ExtensionSecurityCore } from '../security/ExtensionSecurityCore.js'
 import type { ExtensionSignatureVerifier } from '../security/PublicKeySignatureVerifier.js'
 import type { SignaturePolicy } from '../security/SignaturePolicy.js'
 import type { KernelPolicyConfig, PolicyConsentRequest } from '../contracts/KernelPolicy.js'
+import type {
+  ExtensionSettingDefinition,
+  ExtensionSettingValue,
+} from '../contracts/ExtensionSettings.js'
+import { assertSettingValueMatches } from '../contracts/ExtensionSettings.js'
 import { assertStatusProbeAllowed } from '../security/statusProbeGuard.js'
 import { isPlainObject } from './guards.js'
 import { ExtensionRegistry } from './ExtensionRegistry.js'
@@ -46,6 +56,13 @@ export interface ExtensionManagerOptions {
    * (exceptions are rejected).
    */
   onPolicyConsent?: (request: PolicyConsentRequest) => Promise<boolean>
+  /**
+   * Per-call capability permission surface for UIs: invoked the FIRST time an
+   * extension calls a capability whose manifest declares
+   * `permission: 'prompt'`. The decision is cached for the session; an absent
+   * handler is fail-closed (such capabilities are rejected).
+   */
+  onCapabilityPermission?: (request: { extensionId: string; capability: string }) => Promise<boolean>
 }
 
 export class ExtensionManager {
@@ -53,6 +70,10 @@ export class ExtensionManager {
   private readonly activeExtensions = new Set<string>()
   private readonly initializationStatuses = new Map<string, ExtensionInitializationStatus>()
   private readonly kernelBridge: KernelBridge
+  /** Host-stored user-setting overrides keyed by extension id, then key. */
+  private readonly settingOverrides = new Map<string, Map<string, ExtensionSettingValue>>()
+  /** Session-scoped per-capability prompt grants: `${extensionId}:${capability}` -> granted? */
+  private readonly capabilityPermissionGrants = new Map<string, boolean>()
 
   constructor(private readonly options: ExtensionManagerOptions = {}) {
     this.kernelBridge = options.kernelBridge ?? new LocalKernelBridge({
@@ -127,6 +148,12 @@ export class ExtensionManager {
     await this.kernelBridge.deactivate(extensionId)
     this.activeExtensions.delete(extensionId)
     this.initializationStatuses.set(extensionId, this.createDefaultStatus(extension, 'Extension deactivated.'))
+    // Prompt grants are session-scoped per activation cycle.
+    for (const grantKey of [...this.capabilityPermissionGrants.keys()]) {
+      if (grantKey.startsWith(`${extensionId}:`)) {
+        this.capabilityPermissionGrants.delete(grantKey)
+      }
+    }
   }
 
   async invoke<TInput = unknown, TOutput = unknown>(
@@ -137,8 +164,44 @@ export class ExtensionManager {
     if (!this.activeExtensions.has(extensionId)) {
       await this.activate(extensionId)
     }
+    await this.assertCapabilityPermission(extensionId, capability)
 
     return this.kernelBridge.invoke<TInput, TOutput>(extensionId, capability, input)
+  }
+
+  /**
+   * Per-call permission gate: capabilities marked `permission: 'prompt'` need
+   * a one-time grant per activation cycle before their first invoke.
+   */
+  private async assertCapabilityPermission(extensionId: string, capability: string): Promise<void> {
+    const manifest = this.registry.require(extensionId).manifest
+    const needsPrompt = manifest.capabilities.some(
+      (capabilityContract) => capabilityContract.name === capability && capabilityContract.permission === 'prompt',
+    )
+    if (!needsPrompt) {
+      return
+    }
+
+    const grantKey = `${extensionId}:${capability}`
+    const existingGrant = this.capabilityPermissionGrants.get(grantKey)
+    if (existingGrant !== undefined) {
+      if (!existingGrant) {
+        throw new Error(`Capability permission denied for session: ${capability}`)
+      }
+      return
+    }
+
+    if (!this.options.onCapabilityPermission) {
+      // Fail-closed: a prompt-marked capability without a UI surface is denied.
+      this.capabilityPermissionGrants.set(grantKey, false)
+      throw new Error(`Capability permission denied for session: ${capability} (no permission handler configured)`)
+    }
+
+    const granted = await this.options.onCapabilityPermission({ extensionId, capability })
+    this.capabilityPermissionGrants.set(grantKey, granted === true)
+    if (granted !== true) {
+      throw new Error(`Capability permission denied for session: ${capability} (rejected by permission handler)`)
+    }
   }
 
   async openSession(extensionId: string, capability: string, input: unknown): Promise<ExtensionSession> {
@@ -147,6 +210,34 @@ export class ExtensionManager {
     }
 
     return this.kernelBridge.openSession(extensionId, capability, input)
+  }
+
+  /**
+   * Kernel-backed audit ring + per-plugin accounting — the data source for
+   * UI dashboards (call counts, latency, fuel traps, memory events, leak and
+   * contract-violation reports). Requires a kernel-backed bridge (daemon or
+   * embedded); the local bridge keeps no kernel audit ring.
+   */
+  async getAudit(query: KernelAuditQuery = {}): Promise<KernelAuditResult> {
+    if (typeof this.kernelBridge.getAudit !== 'function') {
+      throw new Error('getAudit requires a kernel-backed bridge (kernel.mode "daemon" or embedded); the local bridge keeps no kernel audit ring')
+    }
+
+    return this.kernelBridge.getAudit(query)
+  }
+
+  /**
+   * Await the next governance (audit) event pushed by the kernel the moment
+   * it is recorded — admission rejections, fuel traps, memory pressure and
+   * denials, leak suspicion, contract violations, scheduler backpressure.
+   * Queued events drain first; the promise rejects when the transport closes.
+   */
+  async nextAuditEvent(): Promise<KernelAuditEntry> {
+    if (typeof this.kernelBridge.nextAuditEvent !== 'function') {
+      throw new Error('nextAuditEvent requires a kernel-backed bridge (kernel.mode "daemon" or embedded); the local bridge keeps no kernel audit ring')
+    }
+
+    return this.kernelBridge.nextAuditEvent()
   }
 
   async dispose(): Promise<void> {
@@ -197,6 +288,7 @@ export class ExtensionManager {
 
   unregister(extensionId: string): void {
     this.registry.unregister(extensionId)
+    this.settingOverrides.delete(extensionId)
   }
 
   private createContext(extension: ExtensionInstance): ExtensionContext {
@@ -205,8 +297,48 @@ export class ExtensionManager {
       workspacePath: this.options.workspacePath,
       storagePath: this.options.storagePath,
       initialization: this.createInitializationInfo(extension),
+      settings: extension.manifest.settings?.length
+        ? this.getSettingValues(extension.id)
+        : undefined,
       logger: console,
     }
+  }
+
+  /** Declarative setting definitions from the manifest (UI renders these). */
+  getSettingDefinitions(extensionId: string): ExtensionSettingDefinition[] {
+    return this.registry.require(extensionId).manifest.settings ?? []
+  }
+
+  /**
+   * Current setting values: manifest defaults overridden by host-stored
+   * values. This exact object is delivered as `context.settings` on
+   * (re)activation.
+   */
+  getSettingValues(extensionId: string): Record<string, unknown> {
+    const definitions = this.getSettingDefinitions(extensionId)
+    const overrides = this.settingOverrides.get(extensionId)
+    const values: Record<string, unknown> = {}
+    for (const definition of definitions) {
+      values[definition.key] = overrides?.get(definition.key) ?? definition.default
+    }
+    return values
+  }
+
+  /**
+   * Validate and store one user setting. The value reaches the plugin on its
+   * next (re)activation — call `reinitialize(extensionId)` to apply live.
+   */
+  setSetting(extensionId: string, key: string, value: ExtensionSettingValue): void {
+    const definition = this.getSettingDefinitions(extensionId).find((setting) => setting.key === key)
+    if (!definition) {
+      throw new Error(`Unknown setting key "${key}" for extension "${extensionId}"`)
+    }
+
+    assertSettingValueMatches(definition, value)
+
+    const overrides = this.settingOverrides.get(extensionId) ?? new Map<string, ExtensionSettingValue>()
+    overrides.set(key, value)
+    this.settingOverrides.set(extensionId, overrides)
   }
 
   private validateManifest(manifest: ExtensionManifest): void {

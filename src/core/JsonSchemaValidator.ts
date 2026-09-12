@@ -247,6 +247,24 @@ export const extensionManifestSchema: JsonSchema = {
     },
     runtime: { enum: ['node', 'process', 'native', 'wasm', 'remote'] },
     activationEvents: { type: 'array', items: { type: 'string' } },
+    settings: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['key', 'type'],
+        properties: {
+          key: { type: 'string', minLength: 1 },
+          type: { enum: ['string', 'number', 'boolean', 'enum'] },
+          title: { type: 'string' },
+          description: { type: 'string' },
+          default: { type: ['string', 'number', 'boolean'] },
+          enum: { type: 'array', items: { type: 'string', minLength: 1 } },
+          min: { type: 'number' },
+          max: { type: 'number' },
+        },
+        additionalProperties: false,
+      },
+    },
     capabilities: {
       type: 'array',
       items: {
@@ -261,6 +279,7 @@ export const extensionManifestSchema: JsonSchema = {
           executionMode: { enum: ['ephemeral', 'session', 'persistent'] },
           realtimeClass: { enum: ['batch', 'interactive', 'realtime'] },
           concurrencyPolicy: { enum: ['single', 'shared', 'isolated'] },
+          permission: { enum: ['prompt'] },
           resourceBudget: {
             type: 'object',
             properties: {

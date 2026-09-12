@@ -256,6 +256,10 @@ pub struct AuditEntry {
 pub struct AuditLog {
     ring: VecDeque<AuditEntry>,
     next_seq: u64,
+    /// Governance-event delivery (scheduler sink shares the channel). Set via
+    /// `set_sink` when the host installs a response sink; absent = pull-only
+    /// (query the ring), the safe default for embedded hosts.
+    sink: Option<Arc<Mutex<std::sync::mpsc::Sender<String>>>>,
 }
 
 impl Default for AuditLog {
@@ -265,11 +269,16 @@ impl Default for AuditLog {
         Self {
             ring: VecDeque::new(),
             next_seq: 1,
+            sink: None,
         }
     }
 }
 
 impl AuditLog {
+    fn set_sink(&mut self, sink: Arc<Mutex<std::sync::mpsc::Sender<String>>>) {
+        self.sink = Some(sink);
+    }
+
     fn push(&mut self, kind: &str, extension_id: &str, detail: String) {
         let entry = AuditEntry {
             seq: self.next_seq,
@@ -282,6 +291,13 @@ impl AuditLog {
             detail,
         };
         self.next_seq += 1;
+        if let Some(sink) = &self.sink {
+            // Governance events stream to the host the moment they are
+            // recorded (UI alerting); delivery is best-effort — a closed sink
+            // is teardown, and the ring remains the source of truth.
+            let envelope = json!({ "kind": "audit", "entry": entry });
+            let _ = sink.lock().map(|sink| sink.send(envelope.to_string()));
+        }
         self.ring.push_back(entry);
         while self.ring.len() > AUDIT_LOG_CAPACITY {
             self.ring.pop_front();
@@ -912,6 +928,10 @@ impl KernelDaemon {
     /// Attach the daemon response sink (daemon mode). Required for async
     /// dispatch; without it boundary invokes run synchronously.
     pub fn set_response_sink(&mut self, sink: Arc<Mutex<std::sync::mpsc::Sender<String>>>) {
+        self.audit
+            .lock()
+            .expect("audit lock")
+            .set_sink(Arc::clone(&sink));
         self.response_sink = Some(sink);
     }
 

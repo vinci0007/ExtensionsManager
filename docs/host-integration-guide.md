@@ -336,6 +336,25 @@ The full working loop — 500 fps cadence, percentile measurement, slow-plugin
 coexistence — is [`realtime-tests/harness.mjs`](../realtime-tests/harness.mjs);
 its report is [`realtime-tests/REPORT.md`](../realtime-tests/REPORT.md).
 
+### B5. UI-facing surfaces (dashboards, plugin market, settings, prompts)
+
+Everything a UI needs is a programmatic call — the manager is headless by design.
+
+| UI feature | API |
+|---|---|
+| Plugin list / status | `manager.list()` · `getInitializationInfo(id).isActive` · `checkStatus(id)` |
+| Enable / disable | `manager.activate(id)` / `deactivate(id)` |
+| **Performance & health dashboard** | `await manager.getAudit({ sinceSeq, limit })` → `{ entries, lastSeq, accounting }` — per-plugin call counts, latency, fuel traps, memory high-water, contract violations; `lastSeq` is the cursor for the next poll |
+| **Live governance alerts** (no polling) | `await manager.nextAuditEvent()` — resolves the moment the kernel records an audit entry (admission rejections, fuel traps, memory pressure/denials, `leak.suspected`, `contract.violation`, `invoke.busy`); events also stream through the daemon stdout and the napi `drainAsyncResponses()` channel as `{"kind":"audit","entry":{…}}` lines |
+| **Plugin market** | `await store.installFromRegistry(registryUrl, extensionId)` — fetches a registry index, verifies the bundle sha256 (`sha256-<hex>` over the bundle bytes, per-file digests too), rejects path traversal and plain-http non-loopback registries, then installs |
+| **Plugin settings pages** | manifest `settings: [{ key, type: 'string'\|'number'\|'boolean'\|'enum', title?, default?, enum?, min?, max? }]` → `manager.getSettingDefinitions(id)` (render generically), `manager.getSettingValues(id)`, `manager.setSetting(id, key, value)` (validated). Values reach the plugin as `context.settings` on every (re)activation — call `reinitialize(id)` to apply live |
+| **Permission prompts** | manifest `capabilities[].permission: 'prompt'` + manager option `onCapabilityPermission: async ({ extensionId, capability }) => boolean`. First use of such a capability prompts once per activation cycle (cached); absent handler = fail-closed |
+
+Both `getAudit`/`nextAuditEvent` and the native engine equivalents
+(`emk_request("kernel.audit.query", …)` for polling; sink-delivered
+`{"kind":"audit"}` lines where a response sink is installed) are available to
+Track A hosts too.
+
 ---
 
 ## Where to go next

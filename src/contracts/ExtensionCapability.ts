@@ -21,4 +21,10 @@ export interface ExtensionCapability {
   realtimeClass?: ExtensionRealtimeClass
   concurrencyPolicy?: ExtensionConcurrencyPolicy
   resourceBudget?: ExtensionResourceBudget
+  /**
+   * `'prompt'` = the host UI must grant this capability before its first use
+   * (per session, cached after approval; see ExtensionManagerOptions
+   * `onCapabilityPermission`). Absent = no per-call prompt.
+   */
+  permission?: 'prompt'
 }
