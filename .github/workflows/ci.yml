@@ -32,5 +32,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      - uses: dtolnay/rust-toolchain@stable
+      # The TS suite spawns the daemon (extensionsd) and the security-core
+      # binary from rust/target/debug — build them before testing.
+      - run: cargo build -p extensionsd -p extensions-manager-rust-security-core
+        working-directory: rust
       - run: npm ci
       - run: npm test

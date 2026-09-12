@@ -1,5 +1,5 @@
 node_modules/
-dist/
+/dist/
 .tmp/
 rust/target/
 examples/rust-wasm-dataplane-template/target/
@@ -9,3 +9,5 @@ examples/cpp-embedder-demo/build/
 .mimosa/
 .zcode/
 *.node
+*.exe
+examples/rust-security-core-host/dist-package/**/bin/
