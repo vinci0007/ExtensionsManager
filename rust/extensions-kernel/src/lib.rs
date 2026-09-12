@@ -2528,7 +2528,7 @@ fn read_http_response(mut stream: TcpStream) -> Result<(u16, String), String> {
     let header_end_index = loop {
         let bytes_read = stream
             .read(&mut temp)
-            .map_err(|error| format!("failed to read remote http response: {error}"))?;
+            .map_err(|error| read_http_io_error("failed to read remote http response", error))?;
         if bytes_read == 0 {
             return Err("remote http response closed before headers completed".to_string());
         }
@@ -2547,7 +2547,7 @@ fn read_http_response(mut stream: TcpStream) -> Result<(u16, String), String> {
         while body_bytes.len() < content_length {
             let bytes_read = stream
                 .read(&mut temp)
-                .map_err(|error| format!("failed to read remote http response body: {error}"))?;
+                .map_err(|error| read_http_io_error("failed to read remote http response body", error))?;
             if bytes_read == 0 {
                 return Err("remote http response ended before content-length body completed".to_string());
             }
@@ -2558,7 +2558,7 @@ fn read_http_response(mut stream: TcpStream) -> Result<(u16, String), String> {
         loop {
             let bytes_read = stream
                 .read(&mut temp)
-                .map_err(|error| format!("failed to read remote http response body: {error}"))?;
+                .map_err(|error| read_http_io_error("failed to read remote http response body", error))?;
             if bytes_read == 0 {
                 break;
             }
@@ -2569,6 +2569,20 @@ fn read_http_response(mut stream: TcpStream) -> Result<(u16, String), String> {
     let body = String::from_utf8(body_bytes)
         .map_err(|error| format!("invalid utf8 in remote http response body: {error}"))?;
     Ok((status_code, body))
+}
+
+/// Normalize timeout-shaped IO errors (Windows reports TimedOut/10060, Linux
+/// reports WouldBlock for an expired SO_RCVTIMEO) into one canonical message
+/// so hosts get the same contract on every platform.
+fn read_http_io_error(context: &str, error: std::io::Error) -> String {
+    if matches!(
+        error.kind(),
+        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+    ) {
+        format!("remote http request timed out: {context}")
+    } else {
+        format!("{context}: {error}")
+    }
 }
 
 fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
