@@ -243,6 +243,204 @@ if (written > 0) { /* 解析 out_buf[0..written] */ }
 | 已知坑 | 规范化路径的 `\\?\` 前缀在拉起进程插件前需去除（内核内部已处理） | 无特殊 | 首跑做 ABI 门禁检查 |
 | Demo | `examples/cpp-embedder-demo/build.ps1`（MinGW g++） | `build.sh` | `build.sh` |
 
+### A8. Unreal Engine 深度集成
+
+目标：UE5（4.27 差异随文标注）。内核作为游戏/引擎插件的 ThirdParty 依赖存在，
+由游戏线程驱动。
+
+**模块装载** —— `StartupModule` 加载、ABI 门禁、`ShutdownModule` 释放：
+
+```cpp
+// MyExtensionModule.cpp（Runtime 模块）
+#include "Misc/Paths.h"
+#include "HAL/PlatformProcess.h"
+#include "Containers/Ticker.h"
+
+static void* KernelHandle = nullptr;
+
+// 精确的 C ABI 签名（见 A2）。
+typedef uint32_t  (*FnAbiVersion)();
+typedef char*     (*FnRequest)(const char*);
+typedef const char* (*FnLastError)();
+typedef void      (*FnStringFree)(char*);
+typedef uint64_t  (*FnHandleResolve)(const char*);
+typedef int64_t   (*FnInvokePtr)(uint64_t, const uint8_t*, size_t, uint8_t*, size_t);
+typedef void      (*FnHandleRelease)(uint64_t);
+
+static FnRequest       Request       = nullptr;
+static FnLastError     LastError     = nullptr;
+static FnStringFree    StringFree    = nullptr;
+static FnHandleResolve HandleResolve = nullptr;
+static FnInvokePtr     InvokePtr     = nullptr;
+
+void FMyExtensionModule::StartupModule()
+{
+    const FString DllPath = FPaths::Combine(
+        FPaths::ProjectPluginsDir(), TEXT("MyExtension/Source/ThirdParty/extensions_kernel.dll"));
+
+    KernelHandle = FPlatformProcess::GetDllHandle(*DllPath);
+    checkf(KernelHandle, TEXT("extensions_kernel.dll 加载失败"));
+
+    Request       = reinterpret_cast<FnRequest>(FPlatformProcess::GetDllExport(KernelHandle, TEXT("emk_request")));
+    LastError     = reinterpret_cast<FnLastError>(FPlatformProcess::GetDllExport(KernelHandle, TEXT("emk_last_error")));
+    StringFree    = reinterpret_cast<FnStringFree>(FPlatformProcess::GetDllExport(KernelHandle, TEXT("emk_string_free")));
+    HandleResolve = reinterpret_cast<FnHandleResolve>(FPlatformProcess::GetDllExport(KernelHandle, TEXT("emk_handle_resolve")));
+    InvokePtr     = reinterpret_cast<FnInvokePtr>(FPlatformProcess::GetDllExport(KernelHandle, TEXT("emk_invoke_ptr")));
+    checkf(Request && LastError && StringFree && HandleResolve && InvokePtr, TEXT("缺少 emk_* 导出"));
+
+    checkf(reinterpret_cast<FnAbiVersion>(
+        FPlatformProcess::GetDllExport(KernelHandle, TEXT("emk_abi_version")))() == 1,
+        TEXT("extensions_kernel ABI 不匹配"));
+}
+
+void FMyExtensionModule::ShutdownModule()
+{
+    if (KernelHandle) { FPlatformProcess::FreeDllHandle(KernelHandle); KernelHandle = nullptr; }
+}
+```
+
+**打包** —— 让二进制随游戏分发，在插件的 `*.Build.cs`：
+
+```csharp
+using System.IO;
+string ThirdParty = Path.Combine(ModuleDirectory, "ThirdParty");
+PublicDelayLoadDLLs.Add("extensions_kernel.dll");
+// 把二进制暂存进打包产物（与引擎二进制同目录）：
+RuntimeDependencies.Add(Path.Combine(ThirdParty, "Win64", "extensions_kernel.dll"));
+```
+
+`RuntimeDependencies` 把 dll 暂存到打包产物；`PublicDelayLoadDLLs` 与上面的
+手动 `GetDllHandle` 配对。Linux 打包按同样模式带上 `libextensions_kernel.so`。
+
+**帧驱动 tick** —— 游戏线程每帧调用一次 `emk_tick_ptr`，用 ticker 驱动
+（UE5 `FTSTicker`；UE4 `FTicker`）：
+
+```cpp
+FTSTicker::GetCoreTicker().AddTicker(
+    FTickerDelegate::CreateLambda([](float DeltaTime) -> bool
+    {
+        static uint8 Out[256];
+        // 句柄在激活后解析一次；-1 = 陷阱/忙碌（见 A5/A6）
+        const int64 Written = InvokePtr(AuroraHandle, TickBatch, TickBatchLen, Out, sizeof(Out));
+        return true; // 继续 tick
+    }), 0.f);
+```
+
+**异步结果回游戏线程**：调度器 worker 的异步信封只有在存在响应 sink 时才有
+投递通道（守护进程 / embedded-napi）。纯 C ABI 嵌入中边界调用是同步的——
+确需调用时，用 `Async(EAsyncExecution::ThreadPool, …)` 包住调用，再用
+`AsyncTask(ENamedThreads::GameThread, …)` 把结果搬回游戏线程；绝不要在渲染
+线程解析审计或响应。
+
+**日志与策略**：每次 NULL 请求都把 `emk_last_error()` 包进 `UE_LOG`；启动时
+发送一次 `kernel.policy.set`（见 A6），策略结构体走项目设置/配置文件——
+团队改帧率与内存预算不需要重新编译。
+
+**线程**：所有 `emk_*` 调用在全局内核互斥锁上串行——只从游戏线程调用
+（即上面的 ticker）；内核内部调度 worker 不碰该锁。
+
+### A9. Unity 深度集成
+
+目标：Unity 2021+（Mono 或 IL2CPP）。内核是原生插件，C ABI 用
+`[DllImport]` 绑定。
+
+**二进制放置**：
+
+```
+Assets/Plugins/Windows/x86_64/extensions_kernel.dll
+Assets/Plugins/Linux/x86_64/libextensions_kernel.so
+Assets/Plugins/macOS/arm64/libextensions_kernel.dylib
+```
+
+每个二进制的插件导入设置选择对应平台 + CPU。构建时 Unity 把二进制暂存到
+player 旁；`DllImport` 按库名解析。
+
+**绑定 —— 字符串封送陷阱（重要）**：绝不要把 `emk_request` 声明为返回
+`string`——.NET 封送器会用错误的分配器释放原生缓冲（堆损坏）。应返回
+`IntPtr`，自行用 `emk_string_free` 释放：
+
+```csharp
+using System;
+using System.Runtime.InteropServices;
+using UnityEngine;
+
+public static unsafe class Kernel
+{
+    private const string Lib = "extensions_kernel";
+
+    [DllImport(Lib)] internal static extern uint emk_abi_version();
+    [DllImport(Lib)] private static extern IntPtr emk_request([MarshalAs(UnmanagedType.LPStr)] string request);
+    [DllImport(Lib)] private static extern IntPtr emk_last_error();
+    [DllImport(Lib)] private static extern void   emk_string_free(IntPtr ptr);
+    [DllImport(Lib)] private static extern ulong  emk_handle_resolve([MarshalAs(UnmanagedType.LPStr)] string extensionId);
+    [DllImport(Lib)] private static extern long   emk_invoke_ptr(ulong handle, byte* input, UIntPtr inputLen, byte* outBuf, UIntPtr outCapacity);
+    [DllImport(Lib)] private static extern void   emk_handle_release(ulong handle);
+
+    public static string Request(string jsonLine)
+    {
+        IntPtr response = emk_request(jsonLine);
+        if (response == IntPtr.Zero)
+        {
+            IntPtr last = emk_last_error();
+            string detail = last != IntPtr.Zero ? Marshal.PtrToStringAnsi(last) : "unknown";
+            throw new InvalidOperationException($"kernel transport failure: {detail}");
+        }
+        string owned = Marshal.PtrToStringAnsi(response);
+        emk_string_free(response);
+        return owned;
+    }
+
+    // 缓冲区只分配一次，逐帧复用（见 A2 合约）。
+    public static int Invoke(ulong handle, byte[] input, byte[] output)
+    {
+        fixed (byte* inPtr = input, outPtr = output)
+        {
+            return (int)emk_invoke_ptr(handle, inPtr, (UIntPtr)input.Length, outPtr, (UIntPtr)output.Length);
+        }
+    }
+}
+```
+
+**帧驱动 tick** —— 组件每帧驱动一次字节面；缓冲区留在组件内（每帧零分配）：
+
+```csharp
+public sealed class KernelTicker : MonoBehaviour
+{
+    private ulong auroraHandle;
+    private byte[] batch = new byte[256];
+    private byte[] output = new byte[256];
+
+    void Start()
+    {
+        // ... 启动阶段 emk_request("kernel.load"/"kernel.activate"/policy) ...
+        auroraHandle = Kernel.emk_handle_resolve("game.aurora");
+    }
+
+    void Update()
+    {
+        int written = Kernel.Invoke(auroraHandle, batch, output);
+        if (written > 0) { /* 解码 output[0..written] —— 本帧的插件状态 */ }
+    }
+
+    void OnDestroy()
+    {
+        Kernel.emk_handle_release(auroraHandle);
+    }
+}
+```
+
+**Editor 与 Player**：`DllImport` 两者皆可用；Editor 中 dll 必须匹配编辑器
+进程架构（x86_64）。IL2CPP 构建走同一套绑定（经 IL2CPP 代码生成），二进制
+保持在 `Assets/Plugins/<平台>` 下即可随包分发。
+
+**异步/调度器说明**：与 A6/A8 相同——纯 C ABI 嵌入没有响应 sink，边界
+（进程/远程）调用是同步的；WASM 数据面调用（帧路径）不受影响。若 Unity 侧
+需要受理模型，把 `extensionsd` 守护进程作为子进程拉起并走 stdio 信封协议，
+或把慢工作移到 WASM 字节面。
+
+**治理面**：`kernel.audit.query` 轮询（仪表盘）与——安装了响应 sink 时
+（守护进程/embedded-napi）——`{"kind":"audit"}` 事件行，行为与 B5 描述一致。
+
 ---
 
 ## 轨道 B —— 通用应用（TS/Node）

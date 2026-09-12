@@ -255,6 +255,219 @@ Send once before loading plugins; anything absent falls back to safe defaults:
 | Known quirks | strip the `\\?\` prefix from canonicalized paths before spawning process plugins (kernel handles this internally) | nothing special | gate check on first run |
 | Demo | `examples/cpp-embedder-demo/build.ps1` (MinGW g++) | `build.sh` | `build.sh` |
 
+### A8. Unreal Engine deep integration
+
+Target: UE5 (4.27 notes inline). The kernel lives as a ThirdParty dependency of
+a game/engine plugin and is driven from the game thread.
+
+**Module setup** — load in `StartupModule`, gate on the ABI, release in
+`ShutdownModule`:
+
+```cpp
+// MyExtensionModule.cpp (Runtime module)
+#include "Misc/Paths.h"
+#include "Misc/ScopeLock.h"
+#include "HAL/PlatformProcess.h"
+#include "Containers/Ticker.h"
+
+static void* KernelHandle = nullptr;
+
+// Exact C ABI signatures (see A2).
+typedef uint32_t  (*FnAbiVersion)();
+typedef char*     (*FnRequest)(const char*);
+typedef const char* (*FnLastError)();
+typedef void      (*FnStringFree)(char*);
+typedef void      (*FnReset)();
+typedef uint64_t  (*FnHandleResolve)(const char*);
+typedef int64_t   (*FnInvokePtr)(uint64_t, const uint8_t*, size_t, uint8_t*, size_t);
+typedef void      (*FnHandleRelease)(uint64_t);
+
+static FnRequest      Request      = nullptr;
+static FnLastError    LastError    = nullptr;
+static FnStringFree   StringFree   = nullptr;
+static FnHandleResolve HandleResolve = nullptr;
+static FnInvokePtr    InvokePtr    = nullptr;
+
+void FMyExtensionModule::StartupModule()
+{
+    const FString DllPath = FPaths::Combine(
+        FPaths::ProjectPluginsDir(), TEXT("MyExtension/Source/ThirdParty/extensions_kernel.dll"));
+
+    KernelHandle = FPlatformProcess::GetDllHandle(*DllPath);
+    checkf(KernelHandle, TEXT("extensions_kernel.dll failed to load"));
+
+    Request       = reinterpret_cast<FnRequest>(FPlatformProcess::GetDllExport(KernelHandle, TEXT("emk_request")));
+    LastError     = reinterpret_cast<FnLastError>(FPlatformProcess::GetDllExport(KernelHandle, TEXT("emk_last_error")));
+    StringFree    = reinterpret_cast<FnStringFree>(FPlatformProcess::GetDllExport(KernelHandle, TEXT("emk_string_free")));
+    HandleResolve = reinterpret_cast<FnHandleResolve>(FPlatformProcess::GetDllExport(KernelHandle, TEXT("emk_handle_resolve")));
+    InvokePtr     = reinterpret_cast<FnInvokePtr>(FPlatformProcess::GetDllExport(KernelHandle, TEXT("emk_invoke_ptr")));
+    checkf(Request && LastError && StringFree && HandleResolve && InvokePtr, TEXT("emk_* exports missing"));
+
+    checkf(reinterpret_cast<FnAbiVersion>(
+        FPlatformProcess::GetDllExport(KernelHandle, TEXT("emk_abi_version")))() == 1,
+        TEXT("extensions_kernel ABI mismatch"));
+}
+
+void FMyExtensionModule::ShutdownModule()
+{
+    if (KernelHandle) { FPlatformProcess::FreeDllHandle(KernelHandle); KernelHandle = nullptr; }
+}
+```
+
+**Packaging** — ship the binary with the game: in the plugin's `*.Build.cs`:
+
+```csharp
+using System.IO;
+string ThirdParty = Path.Combine(ModuleDirectory, "ThirdParty");
+PublicDelayLoadDLLs.Add("extensions_kernel.dll");
+// Stage the binary into the packaged game next to the engine binaries:
+RuntimeDependencies.Add(Path.Combine(ThirdParty, "Win64", "extensions_kernel.dll"));
+```
+
+`RuntimeDependencies` stages the dll into the packaged game next to the
+engine binaries; `PublicDelayLoadDLLs` pairs with the manual
+`GetDllHandle` above. For Linux staging ship `libextensions_kernel.so`
+under the same pattern.
+
+**Frame-driven tick** — drive `emk_tick_ptr` once per frame from the game
+thread via a ticker (UE5 `FTSTicker`; UE4 `FTicker`):
+
+```cpp
+FTSTicker::GetCoreTicker().AddTicker(
+    FTickerDelegate::CreateLambda([](float DeltaTime) -> bool
+    {
+        static uint8 Out[256];
+        // handle resolved once after activation; -1 = trap/busy (see A5/A6)
+        const int64 Written = InvokePtr(AuroraHandle, TickBatch, TickBatchLen, Out, sizeof(Out));
+        return true; // keep ticking
+    }), 0.f);
+```
+
+**Async results on the game thread**: scheduler workers deliver async
+envelopes only where a response sink exists (daemon/embedded-napi). In a pure
+C-ABI embedding, boundary invokes are synchronous — if you must call them,
+wrap the call in `Async(EAsyncExecution::ThreadPool, …)` and marshal the
+result back with `AsyncTask(ENamedThreads::GameThread, …)`; never parse audit
+or responses on the render thread.
+
+**Logging + policy**: wrap `emk_last_error()` into `UE_LOG` on every NULL
+request; push `kernel.policy.set` once at startup (see A6) from project
+settings — a `UCVarValue`/config-backed struct keeps the policy editable by
+the team without recompiling.
+
+**Threading**: all `emk_*` calls serialize on a global kernel mutex — call
+them only from the game thread (the ticker above); the kernel's internal
+scheduler workers never take that mutex.
+
+### A9. Unity deep integration
+
+Target: Unity 2021+ with Mono or IL2CPP. The kernel is a native plugin; the
+C ABI is bound with `[DllImport]`.
+
+**Binary placement**:
+
+```
+Assets/Plugins/Windows/x86_64/extensions_kernel.dll
+Assets/Plugins/Linux/x86_64/libextensions_kernel.so
+Assets/Plugins/macOS/arm64/libextensions_kernel.dylib
+```
+
+Set each binary's plugin importer settings to the matching platform + CPU and
+disable "Editor/Player" mismatches. Unity stages the binaries next to the
+player at build time; `DllImport` resolves by library name.
+
+**Bindings — string marshalling footgun (important)**: never declare
+`emk_request` as returning `string`. The .NET marshaler would free the native
+buffer with the wrong allocator (heap corruption); return `IntPtr` and
+release with `emk_string_free` yourself:
+
+```csharp
+using System;
+using System.Runtime.InteropServices;
+using UnityEngine;
+
+public static unsafe class Kernel
+{
+    private const string Lib = "extensions_kernel";
+
+    [DllImport(Lib)] internal static extern uint emk_abi_version();
+    [DllImport(Lib)] private static extern IntPtr emk_request([MarshalAs(UnmanagedType.LPStr)] string request);
+    [DllImport(Lib)] private static extern IntPtr emk_last_error();
+    [DllImport(Lib)] private static extern void   emk_string_free(IntPtr ptr);
+    [DllImport(Lib)] private static extern ulong  emk_handle_resolve([MarshalAs(UnmanagedType.LPStr)] string extensionId);
+    [DllImport(Lib)] private static extern long   emk_invoke_ptr(ulong handle, byte* input, UIntPtr inputLen, byte* outBuf, UIntPtr outCapacity);
+    [DllImport(Lib)] private static extern void   emk_handle_release(ulong handle);
+
+    public static string Request(string jsonLine)
+    {
+        IntPtr response = emk_request(jsonLine);
+        if (response == IntPtr.Zero)
+        {
+            IntPtr last = emk_last_error();
+            string detail = last != IntPtr.Zero ? Marshal.PtrToStringAnsi(last) : "unknown";
+            throw new InvalidOperationException($"kernel transport failure: {detail}");
+        }
+        string owned = Marshal.PtrToStringAnsi(response);
+        emk_string_free(response);
+        return owned;
+    }
+
+    // Buffers are allocated ONCE and reused every frame (see A2 contract).
+    public static int Invoke(ulong handle, byte[] input, byte[] output)
+    {
+        fixed (byte* inPtr = input, outPtr = output)
+        {
+            return (int)emk_invoke_ptr(handle, inPtr, (UIntPtr)input.Length, outPtr, (UIntPtr)output.Length);
+        }
+    }
+}
+```
+
+**Frame-driven tick** — a component drives the byte plane once per frame; the
+buffers live in the component (zero per-frame allocation):
+
+```csharp
+public sealed class KernelTicker : MonoBehaviour
+{
+    private ulong auroraHandle;
+    private byte[] batch = new byte[256];
+    private byte[] output = new byte[256];
+
+    void Start()
+    {
+        // ... emk_request("kernel.load"/"kernel.activate"/policy) at bootstrap ...
+        auroraHandle = Kernel.emk_handle_resolve("game.aurora");
+    }
+
+    void Update()
+    {
+        int written = Kernel.Invoke(auroraHandle, batch, output);
+        if (written > 0) { /* decode output[0..written] — plugin state for this frame */ }
+    }
+
+    void OnDestroy()
+    {
+        Kernel.emk_handle_release(auroraHandle);
+    }
+}
+```
+
+**Editor vs player**: `DllImport` works in both; in the Editor the dll must
+match the editor process architecture (x86_64). On IL2CPP builds the same
+bindings work — `[DllImport]` is compiled through the IL2CPP codegen; keep
+the binaries under `Assets/Plugins/<platform>` so they are staged.
+
+**Async/scheduler note**: identical to A6/A8 — in a pure C-ABI embedding
+there is no response sink, so boundary (process/remote) invokes are
+synchronous; WASM data-plane calls (the frame path) are unaffected. If you
+need the accepted model from Unity, run the `extensionsd` daemon as a child
+process and speak the envelope protocol over its stdio, or move the slow
+work to the WASM byte plane.
+
+**Governance surfaces**: `kernel.audit.query` polling (dashboards) and — where
+a response sink is installed (daemon/embedded-napi) — `{"kind":"audit"}` event
+lines work exactly as described in B5.
+
 ---
 
 ## Track B — General applications (TS/Node)
