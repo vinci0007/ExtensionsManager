@@ -1,7 +1,20 @@
 # ExtensionsManager
 
+**English** | [简体中文](README.zh-CN.md)
+
 ExtensionsManager is a multi-runtime plugin manager for Node.js hosts, with an
 embeddable Rust kernel for realtime hosts.
+
+## Documentation
+
+| Document | Audience |
+| --- | --- |
+| **[Host Integration Guide](docs/host-integration-guide.md)**（[中文](docs/host-integration-guide.zh-CN.md)） | end-to-end integration: game-engine/native hosts via the C ABI, TS/Node applications via the facade — per-platform. **Start here.** |
+| [Embedded kernel data plane & policy reference](docs/embedded-kernel-data-plane.md) | raw byte-plane contract, C ABI summary, measured latencies, policy engine reference |
+| [Plugin Integration Matrix](PLUGIN_INTEGRATION_MATRIX.md)（[中文](PLUGIN_INTEGRATION_MATRIX.zh-CN.md)） | plugin authors: 13 language/form paths, signing, onboarding configs |
+| [Plugin Onboarding Decision Tree](PLUGIN_ONBOARDING_DECISION_TREE.zh-CN.md) | plugin authors: choose runtime / artifact / signing step by step |
+| [Node Realtime Harness](realtime-tests/README.md)（中文） | napi bindings + 500 fps frame-loop measurement for iteration |
+| [Manual Install Integrity Guide](docs/manual-install-integrity-guide.md) | integrity pinning for manually installed plugins |
 
 ## Embedded realtime kernel (Rust, C ABI)
 

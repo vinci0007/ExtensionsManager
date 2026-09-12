@@ -1,6 +1,19 @@
 # ExtensionsManager（中文说明）
 
+[English](README.md) | **简体中文**
+
 ExtensionsManager 是一个面向 Node.js Host 的多运行时插件管理模块，用于统一插件的加载、激活、调用与停用，并向上游提供稳定的扩展管理接口。
+
+## 文档导航
+
+| 文档 | 读者 |
+| --- | --- |
+| **[宿主集成指南](docs/host-integration-guide.zh-CN.md)**（[English](docs/host-integration-guide.md)） | 端到端集成：游戏引擎/原生宿主走 C ABI，TS/Node 应用走门面——分平台说明。**从这里开始。** |
+| [嵌入式内核数据面与策略参考](docs/embedded-kernel-data-plane.md) | 原始字节面合约、C ABI 摘要、实测延迟、策略引擎参考 |
+| [插件接入矩阵](PLUGIN_INTEGRATION_MATRIX.zh-CN.md)（[English](PLUGIN_INTEGRATION_MATRIX.md)） | 插件作者：13 种语言/形态路径、签名、onboarding 配置 |
+| [插件接入决策树](PLUGIN_ONBOARDING_DECISION_TREE.zh-CN.md) | 插件作者：逐步选定 runtime / artifact / 签名模式 |
+| [Node 实时测试宿主](realtime-tests/README.md) | napi 绑定 + 500fps 帧循环实测（迭代优化用） |
+| [手工安装完整性指引](docs/manual-install-integrity-guide.md) | 手工安装插件的完整性固定 |
 
 ## 嵌入式实时内核（Rust / C ABI）
 

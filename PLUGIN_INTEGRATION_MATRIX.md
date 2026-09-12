@@ -17,7 +17,7 @@ This document is a dedicated compatibility and onboarding matrix for plugin auth
 | C executable | `process` | `binary` | Template only | Yes | `plugin-onboarding.c.file.config.json` / `plugin-onboarding.c.inline.config.json` | `examples/c-process-extension-template` |
 | C++ executable | `process` | `binary` | Template only | Yes | `plugin-onboarding.cpp.file.config.json` / `plugin-onboarding.cpp.inline.config.json` | `examples/cpp-process-extension-template` |
 | Shared library (`.dll` / `.so` / `.dylib`) | `native` | `shared-library` | No, runtime placeholder only | Manifest signing supported; runtime loading not implemented | none yet | `examples/native-shared-library-template` |
-| WASM artifact | `wasm` | `wasm` | No, runtime placeholder only | Manifest signing supported; runtime loading not implemented | none yet | `examples/wasm-extension-template` |
+| WASM artifact | `wasm` | `wasm` | Yes — two real paths: the TS facade runtime (memory-quota guard) and the embedded Rust kernel byte data plane (`ext_call`/`ext_tick`, P99 ≈ 0.9 µs release, 16 MiB quota + deterministic fuel) | Manifest signing supported | `plugin-onboarding.wasm.file.config.json` / `plugin-onboarding.wasm.inline.config.json` | `examples/rust-wasm-dataplane-template`, `examples/cpp-dataplane-template`, `examples/cpp-embedder-demo/dataplane-guest.wat`; realtime numbers in `docs/embedded-kernel-data-plane.md` and `docs/host-integration-guide.md` |
 | Static library (`.a` / `.lib`) | not direct | not direct | No | not a directly loadable plugin artifact | not applicable | wrap inside process or native adapter |
 
 ## Signature verification mode matrix

@@ -21,7 +21,7 @@
 | C 可执行文件 | `process` | `binary` | 当前是模板 | 是 | `plugin-onboarding.c.file.config.json` / `plugin-onboarding.c.inline.config.json` | `examples/c-process-extension-template` |
 | C++ 可执行文件 | `process` | `binary` | 当前是模板 | 是 | `plugin-onboarding.cpp.file.config.json` / `plugin-onboarding.cpp.inline.config.json` | `examples/cpp-process-extension-template` |
 | 动态库（`.dll` / `.so` / `.dylib`） | `native` | `shared-library` | 否，仅有 runtime 占位 | manifest 签名支持；运行时加载未实现 | 暂无 | `examples/native-shared-library-template` |
-| WASM 产物 | `wasm` | `wasm` | 否，仅有 runtime 占位 | manifest 签名支持；运行时加载未实现 | 暂无 | `examples/wasm-extension-template` |
+| WASM 产物 | `wasm` | `wasm` | 是——两条已实现路径：TS 门面运行时（内存配额守卫）与嵌入式 Rust 内核字节面数据通道（`ext_call`/`ext_tick`，release P99 ≈ 0.9µs，16MiB 配额 + 确定性 fuel） | manifest 签名支持 | `plugin-onboarding.wasm.file.config.json` / `plugin-onboarding.wasm.inline.config.json` | `examples/rust-wasm-dataplane-template`、`examples/cpp-dataplane-template`、`examples/cpp-embedder-demo/dataplane-guest.wat`；实测数据见 `docs/embedded-kernel-data-plane.md` 与 `docs/host-integration-guide.md` |
 | 静态库（`.a` / `.lib`） | 不是直接模式 | 不是直接模式 | 否 | 不是当前可直接加载的插件产物 | 不适用 | 需要包成进程插件或其他适配层 |
 
 ## 签名认证模式矩阵
