@@ -3,11 +3,21 @@
 Last updated: 2026-09-12 (v1.0.0 — GitHub release baseline)
 
 Version: **v1.0.0** (unified across package.json + all 5 crates). Repository:
-https://github.com/vinci0007/ExtensionsManager (public). Commit guidance: the
-F4 findings-disposition table in
-`docs/superpowers/plans/2026-09-06-policy-engine.md` doubles as the
-pre-commit self-review checklist (operator-path/spawn/Map.set items are
-documented false positives or mitigated core functionality).
+https://github.com/vinci0007/ExtensionsManager (public). Releases publish
+per-platform artifacts (`extensions-kernel-{windows-x64,linux-x64,macos-arm64}`
+archives: kernel cdylib + kernel.node + extensionsd) via
+`.github/workflows/release.yml` on `v*` tags — upstream hosts integrate
+zero-compile. CI (`.github/workflows/ci.yml`): Rust workspace tests
+(windows+ubuntu) + TS suite (Node 24) on push/PR. Cross-platform fixes landed
+during CI bring-up: remote-http timeout errors are canonical across platforms
+(WouldBlock vs TimedOut/10060), macOS napi links with
+`-Wl,-undefined,dynamic_lookup` (rust/.cargo/config.toml), package.json
+clean:dist is node-based (was powershell), TS suite builds the rust binaries
+it spawns, dist-package exes untracked. Integration entry point:
+`docs/host-integration-guide.md` (+ `.zh-CN.md`) — two tracks (game engine /
+TS app), per-platform tables; README has a language switch (EN default) and a
+Documentation navigation section; PLUGIN_INTEGRATION_MATRIX wasm row reflects
+the implemented byte plane.
 
 ## Current focus
 
