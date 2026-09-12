@@ -1,0 +1,14 @@
+[package]
+name = "extensions-kernel-napi"
+version = "1.0.0"
+edition = "2021"
+description = "Node N-API bindings for the ExtensionsManager embedded kernel (realtime test harness host)"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = { version = "2", default-features = false, features = ["napi8"] }
+napi-derive = "2"
+
+extensions-kernel = { path = "../extensions-kernel" }

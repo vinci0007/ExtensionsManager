@@ -1,0 +1,26 @@
+{
+  "id": "demo.native-shared-library-template",
+  "version": "1.0.0",
+  "protocolVersion": "1",
+  "artifact": {
+    "kind": "shared-library",
+    "entry": {
+      "win32-x64": "./build/plugin.dll",
+      "linux-x64": "./build/libplugin.so",
+      "darwin-arm64": "./build/libplugin.dylib",
+      "default": "./build/libplugin.so"
+    },
+    "launch": {
+      "command": "node",
+      "args": ["./bridge.mjs"],
+      "cwd": "${basePath}",
+      "timeoutMs": 5000
+    }
+  },
+  "runtime": "native",
+  "capabilities": [
+    {
+      "name": "demo.hello"
+    }
+  ]
+}

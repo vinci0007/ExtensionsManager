@@ -1,0 +1,14 @@
+{
+  "version": "1",
+  "issuers": [
+    {
+      "id": "third-party-issuer",
+      "trustDomain": "third-party",
+      "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nREPLACE_WITH_ISSUER_PUBLIC_KEY\n-----END PUBLIC KEY-----",
+      "authorization": "authorized",
+      "allowedPublisherIds": [
+        "publisher.demo"
+      ]
+    }
+  ]
+}

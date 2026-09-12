@@ -1,0 +1,33 @@
+{
+  "id": "demo.onboarded-native-plugin",
+  "version": "1.0.0",
+  "protocolVersion": "1",
+  "artifact": {
+    "kind": "shared-library",
+    "entry": {
+      "win32-x64": "./build/plugin.dll",
+      "linux-x64": "./build/libplugin.so",
+      "darwin-arm64": "./build/libplugin.dylib",
+      "default": "./build/libplugin.so"
+    },
+    "launch": {
+      "command": "E:\\Program_install\\nvm\\nodejs\\node.exe",
+      "args": [
+        "./bridge.mjs"
+      ],
+      "cwd": "${basePath}",
+      "timeoutMs": 5000
+    }
+  },
+  "runtime": "native",
+  "capabilities": [
+    {
+      "name": "demo.hello"
+    }
+  ],
+  "signature": {
+    "algorithm": "ed25519",
+    "keyId": "demo-key",
+    "value": "NF+CFq6WjBhUDQgfXLVoo0XIkpgrWDGJfG/c0k6y17xfWlLdhG1zrhEXS9atEhXM4b5Sn6uyZ5qgE9WNuVmPCw=="
+  }
+}

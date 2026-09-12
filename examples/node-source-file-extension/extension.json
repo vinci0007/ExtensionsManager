@@ -1,0 +1,15 @@
+{
+  "id": "demo.node-source-file-extension",
+  "version": "1.0.0",
+  "protocolVersion": "1",
+  "artifact": {
+    "kind": "source-file",
+    "entry": "./index.js"
+  },
+  "runtime": "node",
+  "capabilities": [
+    {
+      "name": "demo.hello"
+    }
+  ]
+}

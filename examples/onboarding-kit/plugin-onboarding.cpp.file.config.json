@@ -1,0 +1,13 @@
+{
+  "extensionId": "demo.cpp-process-extension-template",
+  "manifestPath": "../cpp-process-extension-template/extension.json",
+  "runtime": "process",
+  "signaturePolicy": "require-signature",
+  "invoke": {
+    "capability": "demo.hello",
+    "input": {}
+  },
+  "trustedKeyMode": "file",
+  "trustedKeyDirectory": "./trusted-keys",
+  "trustedPublicKeys": {}
+}

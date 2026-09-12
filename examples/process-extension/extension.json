@@ -1,0 +1,19 @@
+{
+  "id": "demo.process-extension",
+  "version": "1.0.0",
+  "protocolVersion": "1",
+  "artifact": {
+    "kind": "binary",
+    "entry": "./plugin.mjs",
+    "launch": {
+      "command": "node",
+      "args": ["${entry}"]
+    }
+  },
+  "runtime": "process",
+  "capabilities": [
+    {
+      "name": "demo.hello"
+    }
+  ]
+}

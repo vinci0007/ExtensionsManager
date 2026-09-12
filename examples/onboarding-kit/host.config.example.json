@@ -1,0 +1,13 @@
+{
+  "workspacePath": ".",
+  "signaturePolicy": "require-signature",
+  "trustedKeyDirectory": "./trusted-keys",
+  "trustBundlePath": "./trust-bundle.json",
+  "revocationListPath": "./revocation-list.json",
+  "pluginsDirectory": "./plugins",
+  "pluginsRecursive": true,
+  "registerNodeRuntime": true,
+  "registerProcessRuntime": true,
+  "registerNativeRuntime": true,
+  "registerWasmRuntime": true
+}

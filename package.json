@@ -1,0 +1,34 @@
+{
+  "name": "extensions-manager",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "clean:dist": "powershell -Command \"if (Test-Path dist) { Remove-Item -Recurse -Force dist }\"",
+    "build": "npm run clean:dist && tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "demo": "npm run build && node examples/demo.mjs",
+    "demo:formats": "npm run build && node examples/multi-format-demo.mjs",
+    "demo:onboarding": "npm run build && node examples/prepare-onboarding-kit.mjs && node examples/run-onboarding-config.mjs plugin-onboarding.file.config.json && node examples/run-onboarding-config.mjs plugin-onboarding.inline.config.json && node examples/run-onboarding-config.mjs plugin-onboarding.native.file.config.json && node examples/run-onboarding-config.mjs plugin-onboarding.native.inline.config.json && node examples/run-onboarding-config.mjs plugin-onboarding.wasm.file.config.json && node examples/run-onboarding-config.mjs plugin-onboarding.wasm.inline.config.json",
+    "demo:signed": "npm run build && node examples/load-signed-extension.mjs",
+    "demo:remote-http": "npm run build && node examples/remote-http-demo.mjs",
+    "demo:rust-security-core": "npm run build && node examples/rust-security-core-host.mjs",
+    "demo:cpp-embedder": "powershell -ExecutionPolicy Bypass -File examples/cpp-embedder-demo/build.ps1",
+    "package:rust-security-core": "node examples/package-rust-security-core.mjs",
+    "demo:host-autoload": "npm run build && node examples/host-autoload-demo.mjs",
+    "demo:host-config": "npm run build && node examples/host-config-demo.mjs",
+    "sign:manifest": "npm run build && node examples/sign-manifest.mjs",
+    "smoke": "npm run build && node examples/smoke-test.mjs",
+    "test": "npm run build && node --test --test-isolation=none dist/test/**/*.test.js",
+    "test:realtime": "node realtime-tests/harness.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.0",
+    "typescript": "^5.9.2"
+  }
+}

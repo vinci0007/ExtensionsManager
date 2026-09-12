@@ -1,0 +1,15 @@
+{
+  "extensionId": "demo.c-process-extension-template",
+  "manifestPath": "../c-process-extension-template/extension.json",
+  "runtime": "process",
+  "signaturePolicy": "require-signature",
+  "invoke": {
+    "capability": "demo.hello",
+    "input": {}
+  },
+  "trustedKeyMode": "inline",
+  "trustedKeyDirectory": "./trusted-keys",
+  "trustedPublicKeys": {
+    "demo-key": "-----BEGIN PUBLIC KEY-----\nREPLACE_WITH_REAL_PUBLIC_KEY\n-----END PUBLIC KEY-----\n"
+  }
+}

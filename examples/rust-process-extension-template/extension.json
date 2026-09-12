@@ -1,0 +1,23 @@
+{
+  "id": "demo.rust-process-extension-template",
+  "version": "1.0.0",
+  "protocolVersion": "1",
+  "artifact": {
+    "kind": "binary",
+    "entry": {
+      "win32-x64": "./target/release/demo-rust-process-extension.exe",
+      "linux-x64": "./target/release/demo-rust-process-extension",
+      "darwin-arm64": "./target/release/demo-rust-process-extension",
+      "default": "./target/release/demo-rust-process-extension"
+    },
+    "launch": {
+      "timeoutMs": 5000
+    }
+  },
+  "runtime": "process",
+  "capabilities": [
+    {
+      "name": "demo.hello"
+    }
+  ]
+}

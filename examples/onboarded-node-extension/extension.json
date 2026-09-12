@@ -1,0 +1,20 @@
+{
+  "id": "demo.onboarded-plugin",
+  "version": "1.0.0",
+  "protocolVersion": "1",
+  "artifact": {
+    "kind": "module",
+    "entry": "./index.js"
+  },
+  "runtime": "node",
+  "capabilities": [
+    {
+      "name": "demo.hello"
+    }
+  ],
+  "signature": {
+    "algorithm": "ed25519",
+    "keyId": "demo-key",
+    "value": "DHl0kYLbrwbGemf0430u62yyRq8+atDAgPafjnHe6x3+w5fyaOM1SCpMaQtzGh6f1Lu+cte2PgOySYVMziJTCQ=="
+  }
+}

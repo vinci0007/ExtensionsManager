@@ -1,0 +1,13 @@
+{
+  "extensionId": "demo.onboarded-native-plugin",
+  "manifestPath": "../onboarded-native-extension/extension.json",
+  "runtime": "native",
+  "signaturePolicy": "require-signature",
+  "invoke": {
+    "capability": "demo.hello",
+    "input": {}
+  },
+  "trustedKeyMode": "file",
+  "trustedKeyDirectory": "./trusted-keys",
+  "trustedPublicKeys": {}
+}

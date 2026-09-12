@@ -1,0 +1,15 @@
+{
+  "extensionId": "demo.onboarded-plugin",
+  "manifestPath": "../onboarded-node-extension/extension.json",
+  "runtime": "node",
+  "signaturePolicy": "require-signature",
+  "invoke": {
+    "capability": "demo.hello",
+    "input": {}
+  },
+  "trustedKeyMode": "inline",
+  "trustedKeyDirectory": "./trusted-keys",
+  "trustedPublicKeys": {
+    "demo-key": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEACPjBfKS56ZKc+/Pd+u1Y8bDPoN2cNWzAXW1SOX/i9lc=\n-----END PUBLIC KEY-----\n"
+  }
+}

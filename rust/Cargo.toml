@@ -1,0 +1,3 @@
+[workspace]
+members = ["extensions-security-core", "extensions-kernel", "extensionsd", "extensions-kernel-napi"]
+resolver = "2"

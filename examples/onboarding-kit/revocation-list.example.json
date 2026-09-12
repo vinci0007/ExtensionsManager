@@ -1,0 +1,12 @@
+{
+  "version": "1",
+  "revokedSignatureKeys": [
+    { "keyId": "demo-key", "reason": "example" }
+  ],
+  "revokedIssuers": [
+    { "issuerId": "third-party-issuer", "reason": "example" }
+  ],
+  "revokedPublishers": [
+    { "publisherId": "publisher.revoked", "reason": "example" }
+  ]
+}

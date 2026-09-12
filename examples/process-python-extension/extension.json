@@ -1,0 +1,20 @@
+{
+  "id": "demo.python-process-extension",
+  "version": "1.0.0",
+  "protocolVersion": "1",
+  "artifact": {
+    "kind": "binary",
+    "entry": "./plugin.py",
+    "launch": {
+      "command": "python",
+      "args": ["${entry}"],
+      "timeoutMs": 5000
+    }
+  },
+  "runtime": "process",
+  "capabilities": [
+    {
+      "name": "demo.hello"
+    }
+  ]
+}

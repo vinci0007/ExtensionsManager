@@ -1,0 +1,21 @@
+{
+  "id": "demo.onboarded-wasm-plugin",
+  "version": "1.0.0",
+  "protocolVersion": "1",
+  "artifact": {
+    "kind": "wasm",
+    "entry": "./plugin.wasm"
+  },
+  "runtime": "wasm",
+  "capabilities": [
+    {
+      "name": "demo.addOne",
+      "binding": "addOne"
+    }
+  ],
+  "signature": {
+    "algorithm": "ed25519",
+    "keyId": "demo-key",
+    "value": "SZlSklBPn1l7nREn6NFzU4nBc/boTTThhc8OYJwujd8fv8ErQIk9Z9OWPO7s0OBZXNf2HkIuR1ATEdCh2BqoDw=="
+  }
+}

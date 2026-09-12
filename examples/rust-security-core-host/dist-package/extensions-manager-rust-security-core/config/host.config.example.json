@@ -1,0 +1,15 @@
+{
+  "workspacePath": "..",
+  "pluginsDirectory": "../plugins",
+  "pluginsRecursive": true,
+  "signaturePolicy": "require-signature",
+  "trustedKeyDirectory": "../trusted-keys",
+  "trustBundlePath": "./trust-bundle.example.json",
+  "revocationListPath": "./revocation-list.example.json",
+  "kernel": {
+    "mode": "daemon",
+    "transport": "pipe",
+    "command": "../bin/extensionsd.exe",
+    "timeoutMs": 5000
+  }
+}

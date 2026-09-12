@@ -1,0 +1,20 @@
+{
+  "packageName": "extensions-manager-rust-security-core",
+  "version": "0.1.0",
+  "generatedAt": "2026-05-08T15:41:44.976Z",
+  "platform": "win32",
+  "architecture": "x64",
+  "binary": {
+    "path": "bin/extensionsd.exe",
+    "fileName": "extensionsd.exe"
+  },
+  "config": {
+    "hostConfigExample": "config/host.config.example.json",
+    "trustBundleExample": "config/trust-bundle.example.json",
+    "revocationListExample": "config/revocation-list.example.json"
+  },
+  "directories": {
+    "plugins": "plugins",
+    "trustedKeys": "trusted-keys"
+  }
+}

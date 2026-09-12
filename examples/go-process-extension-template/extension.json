@@ -1,0 +1,23 @@
+{
+  "id": "demo.go-process-extension-template",
+  "version": "1.0.0",
+  "protocolVersion": "1",
+  "artifact": {
+    "kind": "binary",
+    "entry": {
+      "win32-x64": "./build/demo-go-process-extension.exe",
+      "linux-x64": "./build/demo-go-process-extension",
+      "darwin-arm64": "./build/demo-go-process-extension",
+      "default": "./build/demo-go-process-extension"
+    },
+    "launch": {
+      "timeoutMs": 5000
+    }
+  },
+  "runtime": "process",
+  "capabilities": [
+    {
+      "name": "demo.hello"
+    }
+  ]
+}

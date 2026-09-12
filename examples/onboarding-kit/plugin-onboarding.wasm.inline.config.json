@@ -1,0 +1,17 @@
+{
+  "extensionId": "demo.onboarded-wasm-plugin",
+  "manifestPath": "../onboarded-wasm-extension/extension.json",
+  "runtime": "wasm",
+  "signaturePolicy": "require-signature",
+  "invoke": {
+    "capability": "demo.addOne",
+    "input": {
+      "value": 41
+    }
+  },
+  "trustedKeyMode": "inline",
+  "trustedKeyDirectory": "./trusted-keys",
+  "trustedPublicKeys": {
+    "demo-key": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEACPjBfKS56ZKc+/Pd+u1Y8bDPoN2cNWzAXW1SOX/i9lc=\n-----END PUBLIC KEY-----\n"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "version": "1",
+  "issuers": [
+    {
+      "id": "official-issuer",
+      "trustDomain": "official",
+      "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nREPLACE_WITH_OFFICIAL_PUBLIC_KEY\n-----END PUBLIC KEY-----",
+      "authorization": "authorized",
+      "allowedPublisherIds": ["publisher.official"]
+    },
+    {
+      "id": "third-party-issuer",
+      "trustDomain": "third-party",
+      "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nREPLACE_WITH_THIRD_PARTY_PUBLIC_KEY\n-----END PUBLIC KEY-----",
+      "authorization": "untrusted"
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "id": "demo.node-package-extension",
+  "version": "1.0.0",
+  "protocolVersion": "1",
+  "artifact": {
+    "kind": "package",
+    "entry": "./dist/index.js"
+  },
+  "runtime": "node",
+  "capabilities": [
+    {
+      "name": "demo.hello"
+    }
+  ]
+}

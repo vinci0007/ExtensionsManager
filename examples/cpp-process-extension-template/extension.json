@@ -1,0 +1,23 @@
+{
+  "id": "demo.cpp-process-extension-template",
+  "version": "1.0.0",
+  "protocolVersion": "1",
+  "artifact": {
+    "kind": "binary",
+    "entry": {
+      "win32-x64": "./build/demo-cpp-process-extension.exe",
+      "linux-x64": "./build/demo-cpp-process-extension",
+      "darwin-arm64": "./build/demo-cpp-process-extension",
+      "default": "./build/demo-cpp-process-extension"
+    },
+    "launch": {
+      "timeoutMs": 5000
+    }
+  },
+  "runtime": "process",
+  "capabilities": [
+    {
+      "name": "demo.hello"
+    }
+  ]
+}

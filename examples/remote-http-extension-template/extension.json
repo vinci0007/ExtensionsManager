@@ -1,0 +1,21 @@
+{
+  "id": "demo.remote-http-extension-template",
+  "version": "1.0.0",
+  "protocolVersion": "1",
+  "artifact": {
+    "kind": "binary",
+    "entry": "./server.mjs",
+    "launch": {
+      "command": "http://127.0.0.1:47111/extensions/demo.remote-http-extension-template",
+      "endpoint": "http://127.0.0.1:47111/extensions/demo.remote-http-extension-template",
+      "transport": "http",
+      "timeoutMs": 5000
+    }
+  },
+  "runtime": "remote",
+  "capabilities": [
+    {
+      "name": "demo.hello"
+    }
+  ]
+}

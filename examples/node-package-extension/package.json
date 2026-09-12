@@ -1,0 +1,6 @@
+{
+  "name": "demo-node-package-extension",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js"
+}
