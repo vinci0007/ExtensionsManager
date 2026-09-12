@@ -49,9 +49,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Build (release)
+        working-directory: rust
         run: cargo build --release -p extensions-kernel -p extensions-kernel-napi -p extensionsd
 
       - name: Test (release)
+        working-directory: rust
         run: cargo test --release --workspace
 
       - name: Stage artifacts

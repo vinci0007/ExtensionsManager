@@ -9,7 +9,7 @@
     "dist"
   ],
   "scripts": {
-    "clean:dist": "powershell -Command \"if (Test-Path dist) { Remove-Item -Recurse -Force dist }\"",
+    "clean:dist": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
     "build": "npm run clean:dist && tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit",
     "demo": "npm run build && node examples/demo.mjs",

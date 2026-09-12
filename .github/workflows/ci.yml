@@ -13,6 +13,9 @@ on:
 jobs:
   rust:
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: rust
     strategy:
       fail-fast: false
       matrix:
