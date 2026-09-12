@@ -1,0 +1,5 @@
+# macOS requires Node/N-API symbols to stay undefined at link time and be
+# resolved by the Node runtime at load; Apple ld errors on undefined symbols
+# by default (Linux shared libs allow them, Windows uses raw-dylib).
+[target.'cfg(target_os = "macos")']
+rustflags = ["-C", "link-args=-Wl,-undefined,dynamic_lookup"]

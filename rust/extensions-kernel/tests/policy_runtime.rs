@@ -4,7 +4,8 @@
 //! Serialized on the process-global kernel (same constraint as policy_admission).
 
 use extensions_kernel::capi::{
-    emk_handle_release, emk_handle_resolve, emk_invoke_ptr, emk_request, emk_string_free,
+    emk_handle_release, emk_handle_resolve, emk_invoke_ptr, emk_last_error, emk_request,
+    emk_string_free,
 };
 use serde_json::{json, Value};
 use std::ffi::{CStr, CString};
@@ -44,10 +45,16 @@ fn write_guest(name: &str, wat: &str) -> String {
 }
 
 fn request_json(value: Value) -> Result<String, String> {
-    let line = CString::new(value.to_string()).expect("request fits");
+    let line = CString::new(value.to_string()).expect("line fits");
     let response = emk_request(line.as_ptr());
     if response.is_null() {
-        return Err("transport-level failure".to_string());
+        let last = unsafe { emk_last_error() };
+        let detail = if last.is_null() {
+            "unknown".to_string()
+        } else {
+            unsafe { CStr::from_ptr(last) }.to_string_lossy().to_string()
+        };
+        return Err(format!("transport-level failure: {detail}"));
     }
     let owned = unsafe { CStr::from_ptr(response) }.to_string_lossy().to_string();
     emk_string_free(response);
