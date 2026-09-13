@@ -6,21 +6,21 @@
 
 ## S1 · 500 fps × 1 plugin
 
-- tick calls: 1475 (failures: 0) · frames: 1475 · overruns(>budget): 1
-- tick latency: p50 4.70 µs · p90 13.40 µs · p99 19.50 µs · p999 26.30 µs · max 8541.70 µs
-- whole-frame JS time: p50 5.40 µs · p99 24.60 µs · max 8564.00 µs
+- tick calls: 1478 (failures: 0) · frames: 1478 · overruns(>budget): 1
+- tick latency: p50 2.40 µs · p90 6.80 µs · p99 15.70 µs · p999 19.70 µs · max 13143.30 µs
+- whole-frame JS time: p50 2.80 µs · p99 19.60 µs · max 13151.30 µs
 
 ## S2 · 500 fps × 20 plugins
 
-- tick calls: 29900 (failures: 0) · frames: 1495 · overruns(>budget): 1
-- tick latency: p50 1.30 µs · p90 2.90 µs · p99 12.50 µs · p999 30.40 µs · max 2149.70 µs
-- whole-frame JS time: p50 34.60 µs · p99 147.90 µs · max 2328.70 µs
+- tick calls: 30000 (failures: 0) · frames: 1500 · overruns(>budget): 0
+- tick latency: p50 0.90 µs · p90 1.60 µs · p99 4.30 µs · p999 14.30 µs · max 60.60 µs
+- whole-frame JS time: p50 22.50 µs · p99 72.50 µs · max 140.00 µs
 
 ## S3 · async coexistence (100 ms boundary plugin)
 
 - tick calls: 1500 (failures: 0) · frames: 1500 · overruns(>budget): 0
-- tick latency: p50 3.80 µs · p90 11.10 µs · p99 19.00 µs · p999 27.40 µs · max 169.80 µs
-- whole-frame JS time: p50 4.40 µs · p99 23.40 µs · max 173.20 µs
-- healthy P99: baseline 18.90 µs → under async-slow pressure 19.00 µs (**offset 0.53%**) → recovery 19.20 µs
-- slow kernel.invoke: 8/8 accepted as async markers (worst accept 0.201 ms)
+- tick latency: p50 2.50 µs · p90 7.50 µs · p99 16.20 µs · p999 20.10 µs · max 35.40 µs
+- whole-frame JS time: p50 2.90 µs · p99 20.10 µs · max 37.70 µs
+- healthy P99: baseline 22.90 µs → under async-slow pressure 16.20 µs (**offset -29.26%**) → recovery 16.40 µs
+- slow kernel.invoke: 8/8 accepted as async markers (worst accept 0.202 ms)
 - async envelopes delivered via sink: 8/8

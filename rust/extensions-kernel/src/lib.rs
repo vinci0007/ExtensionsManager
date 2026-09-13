@@ -645,12 +645,21 @@ impl AsyncPool {
     }
 }
 
+/// Telemetry extracted from a wasm plugin in the SAME handle-lock scope as the
+/// data-plane call (fuel consumed, memory soft/hard events, current usage).
+#[derive(Default)]
+struct WasmTelemetry {
+    consumed: Option<u64>,
+    events: Option<(u64, u64)>,
+    usage: u64,
+}
+
 pub struct KernelDaemon {
     loaded: HashMap<String, LoadedExtension>,
     sessions: HashMap<String, SessionState>,
     closed_sessions: ClosedSessionTombstones,
     next_session_id: u64,
-    handles: HashMap<u64, String>,
+    handles: HashMap<u64, Arc<str>>,
     next_handle: u64,
     policy: KernelPolicyState,
     audit: Arc<Mutex<AuditLog>>,
@@ -756,13 +765,13 @@ impl KernelDaemon {
             return 0;
         }
         for (handle, existing) in &self.handles {
-            if existing == extension_id {
+            if existing.as_ref() == extension_id {
                 return *handle;
             }
         }
         let handle = self.next_handle;
         self.next_handle += 1;
-        self.handles.insert(handle, extension_id.to_string());
+        self.handles.insert(handle, Arc::from(extension_id));
         handle
     }
 
@@ -802,6 +811,12 @@ impl KernelDaemon {
     /// Data-plane byte invoke: raw request bytes in, response written directly into
     /// the caller's buffer. Only in-process wasm plugins with the `ext_call` export
     /// qualify.
+    ///
+    /// Hot-path fusion: ONE handle-lock scope performs the call AND extracts
+    /// wasm telemetry, then ONE accounting scope folds call latency, fuel and
+    /// memory events (the previous shape took two handle locks and three
+    /// accounting locks per call). Audit pushes happen after the accounting
+    /// lock is released; kinds and messages are unchanged.
     pub fn invoke_bytes(
         &mut self,
         handle: u64,
@@ -814,7 +829,8 @@ impl KernelDaemon {
             .ok_or_else(|| format!("unknown data-plane handle: {handle}"))?
             .clone();
         let start = Instant::now();
-        let outcome = {
+
+        let (outcome, telemetry) = {
             let extension = self.require_loaded_mut(&extension_id)?;
             let mut handle_guard = extension
                 .runtime_handle
@@ -823,23 +839,119 @@ impl KernelDaemon {
                 .lock()
                 .map_err(|error| error.to_string())?;
             match &mut *handle_guard {
-                RuntimeHandle::Wasm(plugin) => plugin.call_bytes_into(request, response),
-                _ => Err(format!(
+                RuntimeHandle::Wasm(plugin) => {
+                    let outcome = plugin.call_bytes_into(request, response);
+                    let telemetry = WasmTelemetry {
+                        consumed: plugin.take_fuel_consumed(),
+                        events: Some(plugin.take_memory_events()),
+                        usage: plugin.memory_usage_bytes(),
+                    };
+                    (outcome, telemetry)
+                }
+                _ => (Err(format!(
                     "extension is not an in-process wasm plugin: {extension_id}"
-                )),
+                )), WasmTelemetry::default()),
             }
         };
         let elapsed_ns = start.elapsed().as_nanos() as u64;
 
-        match &outcome {
-            Ok(_) => self.account(&extension_id, elapsed_ns),
-            Err(error) => {
-                self.account(&extension_id, elapsed_ns);
-                self.account_fuel_trap(&extension_id, error);
+        self.settle_invoke(&extension_id, &outcome, elapsed_ns, telemetry);
+        outcome
+    }
+
+    /// Fold one data-plane invocation into accounting + audit with a single
+    /// accounting-lock acquisition. Semantics are identical to the previous
+    /// separate account / fuel-trap / telemetry-drain passes.
+    fn settle_invoke(
+        &mut self,
+        extension_id: &str,
+        outcome: &Result<usize, String>,
+        elapsed_ns: u64,
+        telemetry: WasmTelemetry,
+    ) {
+        const OVER_SLICE_STREAK_THRESHOLD: u64 = 8;
+
+        let is_fuel_trap = matches!(outcome, Err(error) if error.contains("fuel budget"));
+        let slice = self
+            .reservations
+            .get(extension_id)
+            .and_then(|reservation| reservation.fuel_per_tick);
+
+        let (leak_latched, violation) = {
+            let mut accounting_map = self.accounting.lock().expect("accounting lock");
+            let accounting = accounting_map
+                .entry(extension_id.to_string())
+                .or_insert_with(PluginAccounting::default);
+
+            accounting.record_call(elapsed_ns);
+            if is_fuel_trap {
+                accounting.record_fuel_trap();
+            }
+
+            let mut leak_latched = false;
+            if let Some((soft_breaches, denials)) = telemetry.events {
+                accounting.record_memory_events(soft_breaches, denials);
+                leak_latched = accounting.observe_memory_usage(telemetry.usage);
+            }
+
+            let mut violation = false;
+            if let (Some(consumed), Some(slice)) = (telemetry.consumed, slice) {
+                accounting.fuel_consumed_total = accounting.fuel_consumed_total.saturating_add(consumed);
+                if consumed > slice {
+                    accounting.over_slice_streak += 1;
+                    if accounting.over_slice_streak == OVER_SLICE_STREAK_THRESHOLD {
+                        accounting.contract_violations += 1;
+                        violation = true;
+                    }
+                } else {
+                    accounting.over_slice_streak = 0;
+                }
+            }
+            (leak_latched, violation)
+        };
+
+        let mut audit = self.audit.lock().expect("audit lock");
+        if is_fuel_trap {
+            if let Err(error) = outcome {
+                audit.push("fuel.trap", extension_id, error.clone());
             }
         }
-        self.drain_wasm_telemetry(&extension_id)?;
-        outcome
+        if let Some((soft_breaches, denials)) = telemetry.events {
+            if denials > 0 {
+                audit.push(
+                    "memory.growth_denied",
+                    extension_id,
+                    format!("{denials} growth request(s) denied at the hard memory cap"),
+                );
+            } else if soft_breaches > 0 {
+                audit.push(
+                    "memory.pressure",
+                    extension_id,
+                    format!("{soft_breaches} growth request(s) beyond the soft budget (allowed, counted)"),
+                );
+            }
+            if leak_latched {
+                audit.push(
+                    "leak.suspected",
+                    extension_id,
+                    format!(
+                        "linear memory reached a new high water {} times without shrinking (current {} bytes); consider reloading this extension instance",
+                        LEAK_NEW_HIGH_WATER_THRESHOLD, telemetry.usage
+                    ),
+                );
+            }
+        }
+        if violation {
+            audit.push(
+                "contract.violation",
+                extension_id,
+                format!(
+                    "fuel consumption {} exceeded the declared per-tick slice {} for {OVER_SLICE_STREAK_THRESHOLD} consecutive calls",
+                    telemetry.consumed.unwrap_or_default(),
+                    slice.unwrap_or_default(),
+                ),
+            );
+        }
     }
 
     /// Drain wasm telemetry for an extension: memory-growth counters into

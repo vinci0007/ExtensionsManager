@@ -100,7 +100,12 @@ fn load_guest(extension_id: &str, entry_path: &str, memory_mb: u64) -> String {
             "security": { "signaturePolicy": "allow-unsigned" }
         }
     });
-    request_json(load).expect("load should succeed")
+    let response = request_json(load).expect("load should succeed");
+    assert!(
+        !response.contains("\"error\""),
+        "load was rejected: {response}"
+    );
+    response
 }
 
 fn activate(extension_id: &str) {
@@ -206,6 +211,11 @@ fn soft_and_hard_memory_tiers_execute_three_state_semantics() {
 #[test]
 fn monotonic_memory_growth_triggers_leak_suspected() {
     let _guard = kernel_lock();
+
+    // This test relies on the DEFAULT policy (16 MiB fallback, no tiers).
+    // Tests run in nondeterministic order and policy persists on the global
+    // kernel — reset explicitly instead of inheriting another test's tiers.
+    policy_set_stub(json!({}));
 
     let marker = audit_current_seq();
     let entry = write_guest("grow1.wat", GROW_1_WAT);
