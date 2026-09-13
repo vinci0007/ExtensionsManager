@@ -2,6 +2,18 @@
 
 Last updated: 2026-09-12 (v1.0.0 — GitHub release baseline)
 
+Performance iteration (2026-09-12, hot-path fusion, commit e7d829e): `emk_invoke_ptr` now
+does ONE handle lock + ONE accounting lock per call (was two handle locks +
+three accounting locks) and the handle map stores Arc<str> (no per-call
+String alloc). Same-machine A/B (interleaved stash rounds): raw C ABI
+P50 500→300-400 ns, P99 900→400-600 ns; frame_budget 20 plugins @360Hz
+P99 6.7 µs (0.241%) → 4.1 µs (0.147%); napi harness S2 per-call p50 1.0→0.9 µs,
+p99 6.7→4.3 µs, whole-frame 25.0→22.5 µs. Semantics unchanged (55/55 both
+profiles; audit kinds/messages identical). Test-order bug fixed en route:
+policy_runtime leak test inherited another test's memory tiers
+(nondeterministic pass/fail) — it now resets policy explicitly and
+load_guest asserts admission success.
+
 Version: **v1.0.0** (unified across package.json + all 5 crates). Repository:
 https://github.com/vinci0007/ExtensionsManager (public). Releases publish
 per-platform artifacts (`extensions-kernel-{windows-x64,linux-x64,macos-arm64}`
